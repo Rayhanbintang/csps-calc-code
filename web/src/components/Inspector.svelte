@@ -104,7 +104,7 @@
     <div class="top">
       <div>
         <div class="kicker small muted"><span class="tag {f.acc.provider}">{providerNames[f.acc.provider]}</span> {impl?.product ?? ''} · {f.box.region}</div>
-        <input class="name" value={f.item.name ?? ''} placeholder={svc.label} oninput={(e) => (f.item.name = (e.target as HTMLInputElement).value)} aria-label="Item name" maxlength="80" />
+        <label class="editable namewrap"><span class="sr-only">Item name</span><input class="name" value={f.item.name ?? ''} placeholder={svc.label} oninput={(e) => (f.item.name = (e.target as HTMLInputElement).value)} maxlength="80" /></label>
       </div>
       <button class="ghost" aria-label="Close" onclick={() => (app.selected = null)}>✕</button>
     </div>
@@ -206,8 +206,8 @@
   .insp { padding: 12px 14px 14px; display: grid; gap: 12px; }
   .top { display: flex; justify-content: space-between; gap: 8px; align-items: start; }
   .kicker { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .name { font-size: 16px; font-weight: 700; width: 100%; margin-top: 4px; border-color: transparent; background: transparent; padding-left: 0; }
-  .name:hover, .name:focus { border-color: var(--line); padding-left: 8px; }
+  .namewrap { margin-top: 6px; }
+  .name { font-size: 15px; font-weight: 700; width: 100%; }
   .flag { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 8px; padding: 8px 10px; }
   .cols { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 14px; }
   h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }

@@ -52,7 +52,7 @@
     <section class="account {acc.provider}" aria-label="{providerNames[acc.provider]} {acc.label}">
       <header>
         <span class="tag {acc.provider}">{providerNames[acc.provider]}</span>
-        <label class="lbl">
+        <label class="lbl editable">
           <span class="sr-only">Site label</span>
           <input bind:value={acc.label} placeholder="Label, for example DC" maxlength="60" />
         </label>
@@ -121,8 +121,8 @@
   .account.oci { border-left-color: var(--oci); }
   header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .lbl { flex: 1 1 140px; }
-  .lbl input { width: 100%; font-weight: 700; border-color: transparent; background: transparent; }
-  .lbl input:hover, .lbl input:focus { border-color: var(--line); }
+  .lbl { max-width: 260px; }
+  .lbl input { width: 100%; font-weight: 700; }
   .total { font-weight: 700; }
   .regions { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 10px; }
   .box {

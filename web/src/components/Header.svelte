@@ -51,7 +51,7 @@
     <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)" /><path d="M9 21.5a5 5 0 0 1 .6-10 6.5 6.5 0 0 1 12.3 1.6A4.2 4.2 0 0 1 22 21.5z" fill="#fff" /></svg>
     <span class="name">csps-calc</span>
   </div>
-  <label class="est">
+  <label class="est editable">
     <span class="sr-only">Estimate name</span>
     <input bind:value={app.est.name} maxlength="120" />
   </label>
@@ -88,8 +88,7 @@
   .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; }
   .name { font-size: 16px; letter-spacing: -0.01em; }
   .est { flex: 1 1 220px; max-width: 420px; }
-  .est input { width: 100%; font-weight: 600; border-color: transparent; background: transparent; }
-  .est input:hover, .est input:focus { border-color: var(--line); background: var(--panel); }
+  .est input { width: 100%; font-weight: 600; }
   .actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
   .flash {
     display: flex; gap: 10px; align-items: center; flex-wrap: wrap;

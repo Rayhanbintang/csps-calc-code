@@ -3,6 +3,9 @@
   --panel: #ffffff;
   --panel-2: #f0f2f5;
   --line: #dfe3e8;
+  --field-bg: #fbfcfe;
+  --field-line: #aeb7c4;
+  --field-hover: #6f7d91;
   --text: #1c2330;
   --muted: #5d6878;
   --accent: #1f6feb;
@@ -28,6 +31,9 @@
     --panel: #161b22;
     --panel-2: #1d232c;
     --line: #2d3540;
+    --field-bg: #0c1015;
+    --field-line: #4a5565;
+    --field-hover: #7d8a9c;
     --text: #e6eaf0;
     --muted: #9aa5b4;
     --accent: #4c8dff;
@@ -70,13 +76,39 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* Every editable field looks like one: its own background, a visible border, and a
+   stronger border on hover. Read-only text never gets this look. */
 input, select, textarea {
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--field-bg);
+  border: 1px solid var(--field-line);
   border-radius: 7px;
   padding: 6px 8px;
   min-width: 0;
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 5%);
+  transition: border-color 0.1s, box-shadow 0.1s;
 }
+input:hover, select:hover, textarea:hover { border-color: var(--field-hover); }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  outline: none;
+}
+input[type='checkbox'], input[type='radio'] { box-shadow: none; accent-color: var(--accent); width: 16px; height: 16px; }
+select { cursor: pointer; }
+/* Titles edited in place: a boxed field with a pencil mark. */
+.editable { position: relative; display: block; }
+.editable input { padding-right: 26px; }
+.editable::after {
+  content: '✎';
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  font-size: 13px;
+}
+.editable:focus-within::after { color: var(--accent); }
 input[type='number'] { font-variant-numeric: tabular-nums; }
 label { display: block; }
 .muted { color: var(--muted); }
