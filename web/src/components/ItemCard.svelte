@@ -14,7 +14,20 @@
     mult = 1,
     parentId,
     index,
-  }: { item: Item; provider: Provider; boxId: string; mult?: number; parentId?: string; index: number } = $props();
+    depth = 0,
+  }: { item: Item; provider: Provider; boxId: string; mult?: number; parentId?: string; index: number; depth?: number } = $props();
+
+  // Each kind of service has a colour and a short tag, so nested cards are told apart by
+  // kind at a glance, not only by indentation.
+  const KIND: Record<string, [string, string]> = {
+    vpc: ['VPC', 'network'], lb: ['LB', 'network'], egress: ['TRANSFER', 'network'], vpn: ['VPN', 'network'],
+    interconnect: ['LINK', 'network'], dns: ['DNS', 'network'], nat: ['NAT', 'network'], ip: ['IP', 'network'], endpoint: ['ENDPOINT', 'network'],
+    k8s: ['CLUSTER', 'cluster'], containers: ['CONTAINERS', 'cluster'],
+    vm: ['VM', 'compute'], functions: ['FUNCTIONS', 'compute'],
+    disk: ['DISK', 'storage'], object: ['OBJECT', 'storage'], file: ['FILES', 'storage'],
+    db: ['DATABASE', 'data'], cache: ['CACHE', 'data'],
+  };
+  const kind = $derived(KIND[item.svc] ?? [service(item.svc)?.label.toUpperCase() ?? '', 'other']);
 
   const svc = $derived(service(item.svc));
   const p = $derived(prices.get(item.id));
@@ -84,7 +97,7 @@
   }
 </script>
 
-<div class="wrap" class:container>
+<div class="wrap" class:container class:odd={depth % 2 === 1} style:--tc="var(--t-{kind[1]})">
   <div
     class="card"
     class:sel={app.selected === item.id}
@@ -113,6 +126,7 @@
             <span class="chev" class:open={!item.folded}>▸</span>
           </button>
         {/if}
+        <span class="ktag">{kind[0]}</span>
         {#if item.qty > 1}<span class="qty">{item.qty}×</span>{/if}
         {item.name || svc?.label}
         {#if mult > 1}<span class="mult" title="Count inside its containers">= {effective} in total</span>{/if}
@@ -143,7 +157,7 @@
       ondrop={onInsideDrop}
     >
       {#each kids as child, i (child.id)}
-        <ItemCard item={child} {provider} {boxId} mult={effective} parentId={item.id} index={i} />
+        <ItemCard item={child} {provider} {boxId} mult={effective} parentId={item.id} index={i} depth={depth + 1} />
       {/each}
       {#if over === 'no'}
         <div class="hint small nope-text">{svc?.label} cannot hold that.</div>
@@ -170,11 +184,29 @@
     align-items: start;
     background: var(--panel);
     border: 1px solid var(--line);
+    border-left: 4px solid var(--tc);
     border-radius: 8px;
     padding: 7px 9px;
     cursor: grab;
   }
-  .container > .card { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  /* A container's header carries a wash of its colour so it reads as a header. */
+  .container > .card {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    background: color-mix(in srgb, var(--tc) 12%, var(--panel));
+    border-color: color-mix(in srgb, var(--tc) 45%, var(--line));
+    border-left-color: var(--tc);
+  }
+  .ktag {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--tc);
+    background: color-mix(in srgb, var(--tc) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tc) 40%, transparent);
+  }
   .card:hover { border-color: var(--accent); }
   .card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
   .card.bad { border-color: var(--danger); }
@@ -203,17 +235,19 @@
   .flag { color: var(--text); margin-top: 3px; }
   .cost { font-weight: 700; }
   .subtotal { color: var(--accent); font-weight: 600; }
+  /* Levels alternate between a dark and a light well; the rail takes the container's colour. */
   .inside {
     display: grid;
     gap: 6px;
-    padding: 6px 6px 6px 10px;
-    border: 1px solid var(--line);
+    padding: 8px 8px 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--tc) 45%, var(--line));
     border-top: 0;
-    border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+    border-left: 4px solid var(--tc);
     border-radius: 0 0 8px 8px;
-    background: color-mix(in srgb, var(--panel-2) 70%, var(--bg));
+    background: var(--bg);
     transition: background 0.1s, border-color 0.1s;
   }
+  .odd > .inside { background: var(--panel-2); }
   .inside.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
   .inside.nope { border-color: var(--danger); }
   .hint { text-align: center; padding: 4px; }
