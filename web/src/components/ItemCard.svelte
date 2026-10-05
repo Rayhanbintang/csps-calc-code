@@ -141,7 +141,7 @@
     <div class="cost num">
       {#if p}{money(p.monthly)}{:else}<span class="muted">…</span>{/if}
       {#if p?.upfront}<div class="small muted">+{money(p.upfront)} once</div>{/if}
-      {#if total}<div class="small subtotal" title="This card plus everything inside it">{money(total.monthly)} with inside</div>{/if}
+      {#if total}<div class="small subtotal" title="Total per month of this card plus everything inside it">{money(total.monthly)}</div>{/if}
     </div>
   </div>
 
@@ -234,7 +234,7 @@
   .err { color: var(--danger); }
   .flag { color: var(--text); margin-top: 3px; }
   .cost { font-weight: 700; }
-  .subtotal { color: var(--accent); font-weight: 600; }
+  .subtotal { color: var(--accent); font-weight: 600; cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
   /* Levels alternate between a dark and a light well; the rail takes the container's colour. */
   .inside {
     display: grid;
