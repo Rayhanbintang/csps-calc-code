@@ -1,0 +1,11 @@
+# What the Vercel CLI uploads. Unlike git, the upload must include web/public/prices,
+# which the daily Action writes just before deploying.
+.git
+.github
+.vercel
+etl
+cmd
+supabase
+web/node_modules
+web/dist
+*.md
