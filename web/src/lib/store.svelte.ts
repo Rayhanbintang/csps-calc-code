@@ -6,6 +6,10 @@ import type { Manifest } from './prices';
 import { ctxFor, estimateTotals, moveItem, newItem, priceItem, uid } from './engine';
 import { canHold, contains, findNode, walk } from './tree';
 import type { Node } from './tree';
+import { readSheet } from './xlsxread';
+import { SHEET, parseTemplate } from './awsimport';
+import type { ImportResult } from './awsimport';
+import { syncVmSize } from './catalog/vm';
 
 const DRAFT_KEY = 'csps-calc:draft'; // before tabs: one estimate
 const TABS_KEY = 'csps-calc:tabs';
@@ -396,4 +400,43 @@ export function closeTab(id: string): void {
 /** Name of a tab: the one on screen reads the live estimate. */
 export function tabName(t: Tab): string {
   return (t.id === app.tab ? app.est.name : t.est.name) || 'Untitled estimate';
+}
+
+// ---------------------------------------------------------------------------------
+// Import: the AWS Pricing Calculator "EC2 Instances" bulk upload template.
+// ---------------------------------------------------------------------------------
+
+/** Adds the rows of the template to the first AWS site of the tab on screen (a new
+ *  AWS site when there is none). Returns what was imported and what was skipped. */
+export async function importAwsTemplate(file: ArrayBuffer): Promise<ImportResult> {
+  const rows = await readSheet(file, SHEET);
+  const regions = (app.manifest?.providers.aws?.regions ?? []).map((r) => r.code);
+  const res = parseTemplate(rows, regions);
+  if (!res.rows) return res;
+  // Fill vCPU and memory from the instance type, so a later move to another cloud matches by size.
+  await Promise.all(
+    res.boxes.flatMap((b) =>
+      b.items.map(async (vm) => {
+        vm.spec = await syncVmSize('aws', ctxFor(app.manifest, 'aws', b.region), vm.spec);
+      }),
+    ),
+  );
+  let acc = app.est.accounts.find((a) => a.provider === 'aws');
+  if (!acc) {
+    app.est.accounts.push({ id: uid('a'), provider: 'aws', label: 'Imported', regions: [] });
+    acc = app.est.accounts[app.est.accounts.length - 1];
+  }
+  const emptyBefore = new Set(acc.regions.filter((r) => !r.items.length && !r.label).map((r) => r.id));
+  for (const b of res.boxes) {
+    let box = acc.regions.find((r) => r.region === b.region && (r.label ?? '') === b.group);
+    if (!box) {
+      acc.regions.push({ id: uid('r'), region: b.region, label: b.group || undefined, items: [] });
+      box = acc.regions[acc.regions.length - 1];
+    }
+    box.items.push(...b.items);
+  }
+  // A blank starter box would only clutter the site after an import.
+  acc.regions = acc.regions.filter((r) => !(emptyBefore.has(r.id) && !r.items.length));
+  app.selected = null;
+  return res;
 }

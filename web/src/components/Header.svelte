@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, prices, newTab } from '../lib/store.svelte';
+  import { app, prices, newTab, importAwsTemplate } from '../lib/store.svelte';
   import { buildReport, dateOnly } from '../lib/report';
   import { download, saveEstimate } from '../lib/api';
 
@@ -30,6 +30,26 @@
     return buildReport($state.snapshot(app.est), prices, app.manifest);
   }
 
+  let picker: HTMLInputElement;
+  let imported = $state<{ text: string; skipped: string[] } | null>(null);
+
+  function pickFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    imported = null;
+    run('Reading the template…', async () => {
+      const res = await importAwsTemplate(await file.arrayBuffer());
+      imported = {
+        text: res.rows
+          ? `Imported ${res.rows} row${res.rows === 1 ? '' : 's'} (${res.instances} instance${res.instances === 1 ? '' : 's'}) into the AWS site. Cards marked ⚑ carry a template setting this site does not price.`
+          : 'No rows were imported.',
+        skipped: res.skipped,
+      };
+    });
+  }
+
   const share = () =>
     run('Saving…', async () => {
       const slug = await saveEstimate($state.snapshot(app.est), report());
@@ -55,15 +75,24 @@
   <span class="asof small muted" title="Prices refresh every day from each provider's public price list.">Prices as of {dateOnly(asOf)}</span>
   <div class="actions">
     <button onclick={newTab} title="Open a new, empty estimate in another tab">New</button>
+    <button onclick={() => picker.click()} disabled={!!working} title="Import the AWS Pricing Calculator EC2 bulk upload template (.xlsx)">Import EC2 template</button>
+    <input bind:this={picker} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onchange={pickFile} />
     <button onclick={() => run('Building the spreadsheet…', () => download(report(), 'xlsx'))} disabled={!!working}>Excel</button>
     <button onclick={() => run('Building the PDF…', () => download(report(), 'pdf'))} disabled={!!working}>PDF</button>
     <button class="primary" onclick={share} disabled={!!working}>Share link</button>
   </div>
 </header>
-{#if working || problem || shareUrl}
+{#if working || problem || shareUrl || imported}
   <div class="flash" role="status">
     {#if working}{working}{/if}
     {#if problem}<span class="bad">{problem}</span>{/if}
+    {#if imported && !working}
+      <span>{imported.text}</span>
+      {#if imported.skipped.length}
+        <details><summary>{imported.skipped.length} row{imported.skipped.length === 1 ? '' : 's'} skipped</summary><ul class="small">{#each imported.skipped as s}<li>{s}</li>{/each}</ul></details>
+      {/if}
+      <button class="ghost small" onclick={() => (imported = null)} aria-label="Dismiss">✕</button>
+    {/if}
     {#if shareUrl && !working}
       Link copied: <a href={shareUrl} target="_blank" rel="noopener">{shareUrl}</a>
       <span class="muted">Anyone with the link can view this version. Editing makes a new link.</span>
