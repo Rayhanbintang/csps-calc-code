@@ -213,14 +213,6 @@ func itemLabel(it report.Item) string {
 	return pad + it.Name
 }
 
-// withInside is the subtotal of a container and everything in it; blank for others.
-func withInside(it report.Item) any {
-	if it.Subtotal == nil {
-		return ""
-	}
-	return *it.Subtotal
-}
-
 func notes(it report.Item) string {
 	parts := append([]string{}, it.Notes...)
 	if it.Unavailable != "" {
@@ -280,8 +272,8 @@ func Build(r *report.Report) ([]byte, error) {
 	// ---- All items ----
 	all := sheetName(used, "All items")
 	f.NewSheet(all)
-	ai := newSheet(f, all, []float64{14, 12, 22, 26, 18, 18, 22, 6, 20, 14, 14, 16, 30})
-	ai.add(cell{"Site", st.header}, cell{"Cloud", st.header}, cell{"Region", st.header}, cell{"Item", st.header}, cell{"Service", st.header}, cell{"Product", st.header}, cell{"Type / SKU", st.header}, cell{"Qty", st.header}, cell{"Pricing", st.header}, cell{"Per month (USD)", st.header}, cell{"Upfront (USD)", st.header}, cell{"With inside (USD)", st.header}, cell{"Notes", st.header})
+	ai := newSheet(f, all, []float64{14, 12, 22, 26, 18, 18, 22, 6, 20, 14, 14, 30})
+	ai.add(cell{"Site", st.header}, cell{"Cloud", st.header}, cell{"Region", st.header}, cell{"Item", st.header}, cell{"Service", st.header}, cell{"Product", st.header}, cell{"Type / SKU", st.header}, cell{"Qty", st.header}, cell{"Pricing", st.header}, cell{"Per month (USD)", st.header}, cell{"Upfront (USD)", st.header}, cell{"Notes", st.header})
 	for _, a := range r.Accounts {
 		for _, b := range a.Boxes {
 			for _, it := range b.Items {
@@ -289,7 +281,7 @@ func Build(r *report.Report) ([]byte, error) {
 				if it.Unavailable != "" {
 					noteStyle = st.warn
 				}
-				ai.add(cell{a.Site(), st.text}, cell{a.ProviderName, st.text}, cell{b.RegionName, st.text}, cell{itemLabel(it), st.text}, cell{it.Service, st.text}, cell{it.Product, st.text}, cell{it.SKU, st.text}, cell{it.Qty, st.qty}, cell{it.Pricing, st.text}, cell{it.Monthly, st.money}, cell{it.Upfront, st.money}, cell{withInside(it), st.money}, cell{notes(it), noteStyle})
+				ai.add(cell{a.Site(), st.text}, cell{a.ProviderName, st.text}, cell{b.RegionName, st.text}, cell{itemLabel(it), st.text}, cell{it.Service, st.text}, cell{it.Product, st.text}, cell{it.SKU, st.text}, cell{it.Qty, st.qty}, cell{it.Pricing, st.text}, cell{it.Monthly, st.money}, cell{it.Upfront, st.money}, cell{notes(it), noteStyle})
 			}
 		}
 	}
@@ -297,14 +289,14 @@ func Build(r *report.Report) ([]byte, error) {
 		return nil, err
 	}
 	f.SetPanes(all, &excelize.Panes{Freeze: true, YSplit: 1, TopLeftCell: "A2", ActivePane: "bottomLeft"})
-	f.AutoFilter(all, fmt.Sprintf("A1:M%d", len(ai.rows)), nil)
+	f.AutoFilter(all, fmt.Sprintf("A1:L%d", len(ai.rows)), nil)
 
 	// ---- One sheet per region box ----
 	for _, a := range r.Accounts {
 		for _, b := range a.Boxes {
 			name := sheetName(used, a.Label, b.Region)
 			f.NewSheet(name)
-			bs := newSheet(f, name, []float64{30, 34, 12, 14, 16, 16, 16})
+			bs := newSheet(f, name, []float64{30, 34, 12, 14, 16, 16})
 			title := fmt.Sprintf("%s · %s", a.Site(), b.RegionName)
 			if b.Label != "" {
 				title += " (" + b.Label + ")"
@@ -312,15 +304,15 @@ func Build(r *report.Report) ([]byte, error) {
 			bs.add(cell{title, st.title})
 			bs.add(cell{fmt.Sprintf("%s per month, %s upfront. Prices as of %s.", money(b.Monthly), money(b.Upfront), dateOnly(r.PricesAsOf)), st.sub})
 			bs.add()
-			bs.add(cell{"Item / line", st.header}, cell{"Type / SKU · pricing", st.header}, cell{"Quantity", st.header}, cell{"Unit", st.header}, cell{"Rate (USD)", st.header}, cell{"Per month (USD)", st.header}, cell{"With inside (USD)", st.header})
+			bs.add(cell{"Item / line", st.header}, cell{"Type / SKU · pricing", st.header}, cell{"Quantity", st.header}, cell{"Unit", st.header}, cell{"Rate (USD)", st.header}, cell{"Per month (USD)", st.header})
 			for _, it := range b.Items {
 				pad := strings.Repeat("   ", it.Depth) + "      "
-				bs.add(cell{itemLabel(it), st.bold}, cell{strings.TrimSpace(it.SKU + "\n" + it.Pricing), st.bold}, cell{"", st.bold}, cell{"", st.bold}, cell{"", st.bold}, cell{it.Monthly, st.boldMoney}, cell{withInside(it), st.boldMoney})
+				bs.add(cell{itemLabel(it), st.bold}, cell{strings.TrimSpace(it.SKU + "\n" + it.Pricing), st.bold}, cell{"", st.bold}, cell{"", st.bold}, cell{"", st.bold}, cell{it.Monthly, st.boldMoney})
 				for _, l := range it.Lines {
-					bs.add(cell{pad + l.Label, st.text}, cell{"", st.text}, cell{l.Qty, st.qty}, cell{l.Unit, st.text}, cell{l.Rate, st.rate}, cell{l.Monthly, st.money}, cell{"", st.text})
+					bs.add(cell{pad + l.Label, st.text}, cell{"", st.text}, cell{l.Qty, st.qty}, cell{l.Unit, st.text}, cell{l.Rate, st.rate}, cell{l.Monthly, st.money})
 				}
 				if it.Upfront > 0 {
-					bs.add(cell{pad + "Upfront, once", st.text}, cell{"", st.text}, cell{"", st.text}, cell{"", st.text}, cell{"", st.text}, cell{it.Upfront, st.money}, cell{"", st.text})
+					bs.add(cell{pad + "Upfront, once", st.text}, cell{"", st.text}, cell{"", st.text}, cell{"", st.text}, cell{"", st.text}, cell{it.Upfront, st.money})
 				}
 				if n := notes(it); n != "" {
 					style := st.wrap

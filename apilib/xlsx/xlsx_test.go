@@ -14,7 +14,7 @@ func f(v float64) *float64 { return &v }
 
 // The nested example: VPC → cluster → "stateful" (3 VMs, 2 disks each) and "web"
 // (5 VMs, 1 disk each). Rows must indent by depth, show "6 × ... (2 each)"-style counts,
-// and carry container subtotals.
+// and carry no subtotal column.
 func TestNestedItems(t *testing.T) {
 	r := &report.Report{V: 1, Name: "Nested", Accounts: []report.Account{{
 		Provider: "aws", ProviderName: "AWS", Label: "DC",
@@ -46,10 +46,15 @@ func TestNestedItems(t *testing.T) {
 			t.Errorf("row %d item: want %q, got %q", i, label, rows[i][3])
 		}
 	}
-	if rows[0][11] != "With inside (USD)" || !strings.Contains(rows[1][11], "811.81") {
-		t.Errorf("VPC subtotal column: header %q, value %q", rows[0][11], rows[1][11])
+	// No subtotal column: the header row ends with Notes after Upfront.
+	if rows[0][11] != "Notes" || len(rows[0]) != 12 {
+		t.Errorf("want 12 columns ending in Notes, got %v", rows[0])
 	}
-	if len(rows[4]) > 11 && rows[4][11] != "" {
-		t.Errorf("a disk has no subtotal, got %q", rows[4][11])
+	for _, r := range rows {
+		for _, c := range r {
+			if strings.Contains(c, "With inside") || strings.Contains(c, "811.81") {
+				t.Errorf("subtotal leaked into the sheet: %q", c)
+			}
+		}
 	}
 }
