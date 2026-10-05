@@ -56,11 +56,11 @@
                 {#each box.items as it, ii}
                   {@const k = `${ai}-${bi}-${ii}`}
                   <tr class="item" onclick={() => (open[k] = !open[k])}>
-                    <td>{it.name} <span class="muted small">{it.product}</span></td>
+                    <td style:padding-left="{6 + (it.depth ?? 0) * 18}px">{(it.depth ?? 0) > 0 ? '└ ' : ''}{it.name} <span class="muted small">{it.product}</span></td>
                     <td class="small">{it.unavailable ?? it.sku}</td>
-                    <td class="num">{it.qty}</td>
+                    <td class="num">{it.qty}{#if it.ownQty && it.ownQty !== it.qty}<span class="muted small"> ({it.ownQty} each)</span>{/if}</td>
                     <td class="small">{it.pricing}</td>
-                    <td class="num">{money(it.monthly)}</td>
+                    <td class="num">{money(it.monthly)}{#if it.subtotal !== undefined}<div class="small sub">{money(it.subtotal)} with inside</div>{/if}</td>
                     <td class="num">{it.upfront ? money(it.upfront) : ''}</td>
                   </tr>
                   {#if open[k]}
@@ -101,5 +101,6 @@
   .detail { background: var(--panel-2); }
   .ln { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .err { color: var(--danger); }
+  .sub { color: var(--accent); font-weight: 600; }
   .disc { margin-top: 16px; color: var(--muted); }
 </style>

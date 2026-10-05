@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { app, repriceAll, saveDraft } from '../lib/store.svelte';
+  import { app, find, repriceAll, saveDraft } from '../lib/store.svelte';
   import Header from './Header.svelte';
   import Palette from './Palette.svelte';
   import Canvas from './Canvas.svelte';
@@ -57,9 +57,8 @@
     if (e.key === 'Home') { setNav(NAV_DEFAULT); e.preventDefault(); }
   }
 
-  const selectedExists = $derived(
-    app.selected !== null && app.est.accounts.some((a) => a.regions.some((r) => r.items.some((i) => i.id === app.selected))),
-  );
+  // find() searches the whole tree, so items inside a VPC, cluster or VM open too.
+  const selectedExists = $derived(app.selected !== null && find(app.selected) !== undefined);
 
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') app.selected = null;

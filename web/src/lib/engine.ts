@@ -5,6 +5,7 @@ import type { Ctx, ModelOption } from './catalog';
 import type { Manifest } from './prices';
 import { unavailable } from './catalog/util';
 import { syncVmSize } from './catalog/vm';
+import { walk } from './tree';
 
 export const providerNames: Record<Provider, string> = {
   aws: 'AWS',
@@ -81,13 +82,19 @@ export function effectiveMonthly(p: Priced, pricing: Pricing | undefined): numbe
   return p.monthly + p.upfront / months;
 }
 
-/** Called when an item lands in another box. Same provider keeps the spec. */
+/** Called when an item lands in another box. Same provider keeps the spec. Everything
+ *  inside a container moves with it and converts the same way. */
 export async function moveItem(item: Item, from: Provider, to: Provider, ctx: Ctx): Promise<Item> {
   if (from === to) return item;
+  const children = item.children ? await Promise.all(item.children.map((c) => moveItem(c, from, to, ctx))) : undefined;
   const impl = service(item.svc)?.providers[to];
-  if (!impl) return { ...item, check: `${service(item.svc)?.label} is not offered on ${providerNames[to]}.` };
-  if (impl.adopt) return impl.adopt(ctx, item, from);
-  return { ...item, pricing: { model: 'od' }, check: `Moved from ${providerNames[from]}. Check the settings.` };
+  let moved: Item;
+  if (!impl) moved = { ...item, check: `${service(item.svc)?.label} is not offered on ${providerNames[to]}.` };
+  else if (impl.adopt) moved = await impl.adopt(ctx, item, from);
+  // Flag only items where a type or class had to be matched; a VPC or a cluster carries
+  // over as is.
+  else moved = { ...item, pricing: { model: 'od' }, check: impl.fields ? `Moved from ${providerNames[from]}. Check the settings.` : undefined };
+  return children ? { ...moved, children } : moved;
 }
 
 /** After the SA picks a type by hand, keep vCPU and memory in step so later moves match. */
@@ -105,8 +112,9 @@ export function sumTotals(list: Totals[]): Totals {
   return list.reduce((a, b) => ({ monthly: a.monthly + b.monthly, upfront: a.upfront + b.upfront }), { monthly: 0, upfront: 0 });
 }
 
+/** Each item's price already counts its containers, so a box total is a plain sum. */
 export function boxTotals(box: RegionBox, prices: Map<string, Priced>): Totals {
-  return sumTotals(box.items.map((i) => prices.get(i.id) ?? { monthly: 0, upfront: 0 }));
+  return sumTotals([...walk(box.items)].map((n) => prices.get(n.item.id) ?? { monthly: 0, upfront: 0 }));
 }
 
 export function accountTotals(acc: Account, prices: Map<string, Priced>): Totals {

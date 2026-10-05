@@ -38,6 +38,10 @@ export interface Item {
   pricing?: Pricing;
   /** Set when the item changed provider and the SA should confirm the equivalent. */
   check?: string;
+  /** Items inside this one (VPC → cluster → VM → disk). Counts multiply down the tree. */
+  children?: Item[];
+  /** Folded on the canvas. */
+  folded?: boolean;
 }
 
 export interface Pricing {

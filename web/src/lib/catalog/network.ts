@@ -17,17 +17,52 @@ const free = (product: string, sku: string, note: string): Priced => priced([lin
 
 export const vpc: Service = {
   id: 'vpc',
-  label: 'VPC + internet gateway',
+  label: 'VPC',
   group: 'Networking',
-  blurb: 'VPC · VPC network · VCN (no charge)',
-  defaults: {},
-  fields: [],
+  blurb: 'VPC · VPC network · VCN, with NAT, endpoints and public IPs. Holds clusters, VMs, load balancers',
+  defaults: { nat: 1, natGb: 500, natVms: 10, endpoints: 0, endpointZones: 2, endpointGb: 100, ips: 0, ipState: 'used' },
+  fields: [
+    { key: 'nat', label: 'NAT gateways', type: 'number', min: 0, step: 1, help: 'AWS bills one gateway per zone; use 2 or 3 for multi-zone.' },
+    { key: 'natGb', label: 'Data through NAT, all gateways', type: 'number', unit: 'GB / month', min: 0, step: 100, show: (s) => Number(s.nat) > 0 },
+    { key: 'natVms', label: 'VMs using Cloud NAT (Google)', type: 'number', min: 1, step: 1, show: (s) => Number(s.nat) > 0 },
+    { key: 'endpoints', label: 'Interface endpoints (PrivateLink / PSC)', type: 'number', min: 0, step: 1 },
+    { key: 'endpointZones', label: 'Zones per endpoint (AWS)', type: 'number', min: 1, step: 1, show: (s) => Number(s.endpoints) > 0 },
+    { key: 'endpointGb', label: 'Data through endpoints, all of them', type: 'number', unit: 'GB / month', min: 0, step: 10, show: (s) => Number(s.endpoints) > 0 },
+    { key: 'ips', label: 'Public IPv4 addresses', type: 'number', min: 0, step: 1 },
+    { key: 'ipState', label: 'IP state', type: 'select', options: opts(['used', 'Attached to a running resource'], ['idle', 'Reserved, not attached']), show: (s) => Number(s.ips) > 0 },
+  ],
   providers: {
-    aws: { product: 'Amazon VPC', price: async () => free('Amazon VPC', 'VPC, subnets, route tables, internet gateway', 'AWS does not charge for the VPC or the internet gateway. NAT, endpoints, public IPs and data transfer are priced as their own items.') },
-    gcp: { product: 'VPC network', price: async () => free('VPC network', 'VPC network, subnets, routes, default internet gateway', 'Google does not charge for the VPC network. NAT, IPs and data transfer are priced as their own items.') },
-    oci: { product: 'OCI VCN', price: async () => free('OCI VCN', 'VCN, subnets, internet gateway, service gateway', 'Oracle does not charge for the VCN or its gateways.') },
+    aws: { product: 'Amazon VPC', price: (ctx, item) => vpcPrice(ctx, item, 'The VPC, subnets, route tables and internet gateway have no charge.') },
+    gcp: { product: 'VPC network', price: (ctx, item) => vpcPrice(ctx, item, 'The VPC network, subnets and routes have no charge.') },
+    oci: { product: 'OCI VCN', price: (ctx, item) => vpcPrice(ctx, item, 'The VCN and its internet, NAT and service gateways have no charge on OCI.') },
   },
 };
+
+/** Prices the parts of a VPC that cost money by reusing the NAT, endpoint and IP pricers. */
+async function vpcPrice(ctx: Ctx, item: Item, freeNote: string): Promise<Priced> {
+  const s = item.spec;
+  // Data fields on the VPC card are totals for the VPC. The NAT and endpoint pricers bill
+  // data per gateway / endpoint, so the total is split across them.
+  const natN = num(s, 'nat', 0), epN = num(s, 'endpoints', 0);
+  const parts: [Service, number, Record<string, string | number | boolean>][] = [
+    [nat, natN, { gb: natN ? num(s, 'natGb', 0) / natN : 0, vms: num(s, 'natVms', 10) }],
+    [endpoint, epN, { zones: num(s, 'endpointZones', 2), gb: epN ? num(s, 'endpointGb', 0) / epN : 0 }],
+    [ip, num(s, 'ips', 0), { state: str(s, 'ipState', 'used') }],
+  ];
+  const lines: Line[] = [];
+  const notes: string[] = [freeNote];
+  for (const [svc, count, spec] of parts) {
+    if (count <= 0) continue;
+    const impl = svc.providers[ctx.provider];
+    if (!impl) continue;
+    const p = await impl.price(ctx, { ...item, svc: svc.id, qty: count * item.qty, spec, children: undefined, pricing: { model: 'od' } });
+    if (p.unavailable) throw new Error(p.unavailable);
+    for (const l of p.lines) if (l.monthly > 0 || l.rate > 0) lines.push({ ...l, label: `${svc.label}: ${l.label}` });
+    for (const n of p.notes) if (!notes.includes(n)) notes.push(n);
+  }
+  if (!lines.length) lines.push(line('VPC', item.qty, 'VPCs', 0));
+  return priced(lines, { sku: item.qty > 1 ? `${item.qty} VPCs` : 'VPC', notes });
+}
 
 // =====================================================================================
 // Load balancer
@@ -113,6 +148,7 @@ export const lb: Service = {
 export const nat: Service = {
   id: 'nat',
   label: 'NAT gateway',
+  hidden: true,
   group: 'Networking',
   blurb: 'NAT Gateway · Cloud NAT · NAT Gateway',
   defaults: { gb: 500, vms: 10 },
@@ -154,6 +190,7 @@ export const nat: Service = {
 export const ip: Service = {
   id: 'ip',
   label: 'Public IPv4 address',
+  hidden: true,
   group: 'Networking',
   blurb: 'Elastic IP · External IP · Reserved public IP',
   defaults: { state: 'used' },
@@ -187,6 +224,7 @@ export const ip: Service = {
 export const endpoint: Service = {
   id: 'endpoint',
   label: 'Private endpoint',
+  hidden: true,
   group: 'Networking',
   blurb: 'VPC interface endpoint · Private Service Connect · Private Endpoint',
   defaults: { zones: 2, gb: 100 },

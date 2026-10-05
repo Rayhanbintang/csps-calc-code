@@ -16,19 +16,24 @@ type Line struct {
 	Monthly float64 `json:"monthly"`
 }
 
-// Item is one estimate item with its price.
+// Item is one estimate item with its price. Items arrive parents first; Depth says how
+// deep each one sits (0 = in the region box, 1 = inside a VPC, cluster or VM, ...).
 type Item struct {
-	Name        string   `json:"name"`
-	Service     string   `json:"service"`
-	Product     string   `json:"product"`
-	SKU         string   `json:"sku"`
-	Qty         float64  `json:"qty"`
-	Pricing     string   `json:"pricing"`
-	Monthly     float64  `json:"monthly"`
-	Upfront     float64  `json:"upfront"`
-	Lines       []Line   `json:"lines"`
-	Notes       []string `json:"notes"`
-	Unavailable string   `json:"unavailable,omitempty"`
+	Depth           int      `json:"depth"`
+	Subtotal        *float64 `json:"subtotal,omitempty"`
+	SubtotalUpfront *float64 `json:"subtotalUpfront,omitempty"`
+	OwnQty          float64  `json:"ownQty"`
+	Name            string   `json:"name"`
+	Service         string   `json:"service"`
+	Product         string   `json:"product"`
+	SKU             string   `json:"sku"`
+	Qty             float64  `json:"qty"`
+	Pricing         string   `json:"pricing"`
+	Monthly         float64  `json:"monthly"`
+	Upfront         float64  `json:"upfront"`
+	Lines           []Line   `json:"lines"`
+	Notes           []string `json:"notes"`
+	Unavailable     string   `json:"unavailable,omitempty"`
 }
 
 // Box is one region box.
@@ -88,7 +93,7 @@ func (r *Report) Validate() error {
 		for _, b := range a.Boxes {
 			n += len(b.Items)
 			for _, it := range b.Items {
-				if len(it.Name) > MaxText || len(it.SKU) > MaxText || len(it.Lines) > 50 {
+				if len(it.Name) > MaxText || len(it.SKU) > MaxText || len(it.Lines) > 50 || it.Depth < 0 || it.Depth > 10 {
 					return errors.New("an item is too large")
 				}
 				if bad(it.Monthly) || bad(it.Upfront) {

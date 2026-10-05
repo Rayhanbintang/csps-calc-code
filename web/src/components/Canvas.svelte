@@ -5,12 +5,14 @@
   import { money } from '../lib/report';
   import ItemCard from './ItemCard.svelte';
   import RegionSelect from './RegionSelect.svelte';
+  import { endDrag } from '../lib/drag';
 
   let over = $state<string | null>(null);
 
   function onDrop(e: DragEvent, boxId: string) {
     e.preventDefault();
     over = null;
+    endDrag();
     const svc = e.dataTransfer?.getData('application/x-csps-svc');
     if (svc) return addItem(boxId, svc);
     const ids = e.dataTransfer?.getData('application/x-csps-items');
@@ -67,6 +69,7 @@
           {@const bt = boxTotals(box, prices)}
           <div
             class="box"
+            class:wide={box.items.some((i) => i.children?.length)}
             class:over={over === box.id}
             role="group"
             aria-label="Region box {box.label || box.region}"
@@ -88,7 +91,7 @@
             </div>
             <div class="items">
               {#each box.items as item (item.id)}
-                <ItemCard {item} provider={acc.provider} />
+                <ItemCard {item} provider={acc.provider} boxId={box.id} />
               {/each}
               <div class="drop small muted">{box.items.length ? 'Drop here to add or move' : 'Drag services here, or click one in the list'}</div>
             </div>
@@ -133,6 +136,8 @@
     min-height: 120px;
     transition: border-color 0.1s, background 0.1s;
   }
+  /* A box holding a VPC, cluster or VM tree takes the full row so the tree has room. */
+  .box.wide { grid-column: 1 / -1; }
   .box.over { border-color: var(--accent); border-style: solid; background: color-mix(in srgb, var(--accent) 8%, var(--panel-2)); }
   .boxhead { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
   .boxlabel { flex: 1 1 80px; font-size: 12px; padding: 4px 6px; }

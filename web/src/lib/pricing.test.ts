@@ -169,6 +169,22 @@ describe.skipIf(!have)('Oracle Cloud', () => {
   });
 });
 
+describe.skipIf(!have)('VPC card', () => {
+  it('AWS Jakarta: two NAT gateways sharing 500 GB, one endpoint in 2 zones, one public IP', async () => {
+    const p = await price('aws', 'ap-southeast-3', item('vpc', { nat: 2, natGb: 500, endpoints: 1, endpointZones: 2, endpointGb: 0, ips: 1 }));
+    expect(p.unavailable).toBeUndefined();
+    // NAT 2 × 730 h × $0.059 + 500 GB × $0.059 (the data is a VPC total, not per gateway),
+    // endpoint 2 zones × 730 h × $0.013, public IP 730 h × $0.005.
+    near(p.monthly, 2 * 730 * 0.059 + 500 * 0.059 + 2 * 730 * 0.013 + 730 * 0.005);
+  });
+
+  it('OCI: the same VPC costs nothing', async () => {
+    const p = await price('oci', 'ap-singapore-1', item('vpc', { nat: 2, natGb: 500, endpoints: 1, ips: 1 }));
+    expect(p.unavailable).toBeUndefined();
+    expect(p.monthly).toBe(0);
+  });
+});
+
 describe.skipIf(!have)('moving between clouds', () => {
   it('a VM moved from AWS to Google Cloud keeps its size and is flagged for a check', async () => {
     const from = item('vm', { 'aws.type': 'm5.xlarge', vcpu: 4, mem: 16 });
@@ -179,17 +195,31 @@ describe.skipIf(!have)('moving between clouds', () => {
     expect(p.sku).toMatch(/4 vCPU · 16 GiB/);
   });
 
-  it('reminders ask for replication transfer and a link between two clouds', () => {
+  it('reminders ask for replication transfer, a link between clouds, disks and a VPC', () => {
+    const vm = { ...item('vm'), id: 'vm1' };
     const est = {
       v: 1 as const, name: 't',
       accounts: [
-        { id: 'a', provider: 'aws' as const, label: 'DC', regions: [{ id: 'r1', region: 'ap-southeast-3', items: [item('vm')] }] },
+        { id: 'a', provider: 'aws' as const, label: 'DC', regions: [{ id: 'r1', region: 'ap-southeast-3', items: [vm] }] },
         { id: 'b', provider: 'gcp' as const, label: 'DRC', regions: [{ id: 'r2', region: 'asia-southeast2', items: [item('vm')] }] },
       ],
     };
-    const ids = reminders(est, new Map()).map((r) => r.id);
+    const rs = reminders(est, new Map());
+    const ids = rs.map((r) => r.id);
     expect(ids).toContain('replication');
     expect(ids).toContain('connect');
-    expect(ids).toContain('disk-r1');
+    expect(ids).toContain('disk-vm1');
+    expect(ids).toContain('vpc-r1');
+    // The disk fix adds the disk inside the VM, not loose in the box.
+    expect(rs.find((r) => r.id === 'disk-vm1')?.add).toMatchObject({ parentId: 'vm1', svc: 'disk' });
+  });
+
+  it('a VM inside a cluster and a VPC moves to another cloud with its disks', async () => {
+    const tree = { ...item('vpc'), children: [{ ...item('k8s'), children: [{ ...item('vm', { 'aws.type': 'm5.large' }), children: [item('disk')] }] }] };
+    const moved = await moveItem(tree, 'aws', 'gcp', ctxFor(manifest, 'gcp', 'asia-southeast2'));
+    const vm = moved.children![0].children![0];
+    expect(vm.children![0].svc).toBe('disk');
+    expect(vm.spec['aws.type']).toBeUndefined();
+    expect(vm.check).toBeTruthy();
   });
 });

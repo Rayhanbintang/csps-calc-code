@@ -4,13 +4,22 @@ import type { Estimate, Line, Priced, Provider } from './types';
 import type { Manifest } from './prices';
 import { service } from './catalog';
 import { pricingLabel, providerNames, sumTotals } from './engine';
+import { subtotal, walk } from './tree';
 
 export interface ReportItem {
+  /** 0 for items in the region box, 1 inside a container, and so on. */
+  depth: number;
+  /** For containers: this item plus everything inside it. */
+  subtotal?: number;
+  subtotalUpfront?: number;
   name: string;
   service: string;
   product: string;
   sku: string;
+  /** Count priced: own count times the counts of the containers above. */
   qty: number;
+  /** Count entered on the card, before multiplying by containers. */
+  ownQty: number;
   pricing: string;
   monthly: number;
   upfront: number;
@@ -59,15 +68,20 @@ export function buildReport(est: Estimate, prices: Map<string, Priced>, manifest
     if (acc.provider !== 'onprem') used.add(acc.provider);
     const regions = manifest?.providers[acc.provider]?.regions ?? [];
     const boxes: ReportBox[] = acc.regions.map((box) => {
-      const items: ReportItem[] = box.items.map((it) => {
+      const items: ReportItem[] = [...walk(box.items)].map(({ item: it, mult, depth }) => {
         const p = prices.get(it.id);
         const svc = service(it.svc);
+        const sub = it.children?.length ? subtotal(it, (id) => prices.get(id)) : undefined;
         return {
+          depth,
+          subtotal: sub?.monthly,
+          subtotalUpfront: sub?.upfront,
           name: it.name || svc?.label || it.svc,
           service: svc?.label ?? it.svc,
           product: svc?.providers[acc.provider]?.product ?? '',
           sku: p?.sku ?? '',
-          qty: it.qty,
+          qty: it.qty * mult,
+          ownQty: it.qty,
           pricing: pricingLabel(acc.provider, it.svc, it.pricing),
           monthly: p?.monthly ?? 0,
           upfront: p?.upfront ?? 0,
@@ -76,6 +90,7 @@ export function buildReport(est: Estimate, prices: Map<string, Priced>, manifest
           unavailable: p?.unavailable,
         };
       });
+      // Each item's price already counts its containers, so the box total is a plain sum.
       const t = sumTotals(items);
       return {
         region: box.region,

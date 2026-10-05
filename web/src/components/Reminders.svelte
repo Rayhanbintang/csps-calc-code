@@ -16,7 +16,7 @@
           <span class="txt">{r.text}</span>
           <span class="act">
             {#if r.add}
-              <button class="small" onclick={() => r.add && addItem(r.add.boxId, r.add.svc, r.add.spec)}>{r.add.label}</button>
+              <button class="small" onclick={() => r.add && addItem(r.add.boxId, r.add.svc, r.add.spec, r.add.parentId)}>{r.add.label}</button>
             {/if}
             <button class="ghost small" aria-label="Dismiss" title="Dismiss" onclick={() => (dismissed = [...dismissed, r.id])}>✕</button>
           </span>

@@ -56,6 +56,8 @@ export interface Service {
   group: 'Compute' | 'Storage' | 'Database' | 'Networking' | 'Security' | 'Integration' | 'Operations' | 'Other';
   /** Short text for the palette. */
   blurb: string;
+  /** Kept for old estimates but not offered in the palette (now fields of another card). */
+  hidden?: boolean;
   fields: Field[];
   defaults: Spec;
   providers: Partial<Record<Provider, ProviderImpl>>;

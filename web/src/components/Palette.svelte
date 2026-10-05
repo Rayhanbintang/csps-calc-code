@@ -1,6 +1,8 @@
 <script lang="ts">
   import { services } from '../lib/catalog';
   import { app, addItem, find } from '../lib/store.svelte';
+  import { endDrag, startService } from '../lib/drag';
+  import { canHold } from '../lib/tree';
 
   const groups = ['Compute', 'Storage', 'Database', 'Networking', 'Security', 'Integration', 'Operations', 'Other'] as const;
   let q = $state('');
@@ -25,25 +27,24 @@
   }
 
   const shown = $derived(
-    services.filter((s) => !q || `${s.label} ${s.blurb}`.toLowerCase().includes(q.toLowerCase())),
+    services.filter((s) => !s.hidden).filter((s) => !q || `${s.label} ${s.blurb}`.toLowerCase().includes(q.toLowerCase())),
   );
 
-  /** Clicking a service adds it to the box of the selected item, or to the first box. */
+  /** Clicking a service adds it inside the selected card when that card can hold it,
+   *  otherwise next to the selected card, otherwise to the first box. */
   function add(svc: string) {
-    const target = (app.selected && find(app.selected)?.box.id) || app.est.accounts[0]?.regions[0]?.id;
-    if (target) addItem(target, svc);
-  }
-
-  function drag(e: DragEvent, svc: string) {
-    e.dataTransfer?.setData('application/x-csps-svc', svc);
-    e.dataTransfer!.effectAllowed = 'copy';
+    const sel = app.selected ? find(app.selected) : undefined;
+    if (sel && canHold(sel.item.svc, svc)) return addItem(sel.box.id, svc, undefined, sel.item.id);
+    if (sel && sel.parent && canHold(sel.parent.svc, svc)) return addItem(sel.box.id, svc, undefined, sel.parent.id);
+    const box = sel?.box.id ?? app.est.accounts[0]?.regions[0]?.id;
+    if (box) addItem(box, svc);
   }
 </script>
 
 <nav aria-label="Services">
   <input class="search" type="search" placeholder="Find a service" bind:value={q} aria-label="Find a service" />
   <div class="bar">
-    <p class="hint small muted">Drag a service into a region box, or click to add it to the selected box.</p>
+    <p class="hint small muted">Drag a service into a region box or into a VPC, cluster or VM card. Click to add it next to the selected card.</p>
     <button class="ghost small all" onclick={toggleAll}>{allClosed ? 'Expand all' : 'Collapse all'}</button>
   </div>
   {#each groups as g}
@@ -62,7 +63,7 @@
           <ul>
             {#each list as s (s.id)}
               <li>
-                <button class="svc" draggable="true" ondragstart={(e) => drag(e, s.id)} onclick={() => add(s.id)} title={s.blurb}>
+                <button class="svc" draggable="true" ondragstart={(e) => startService(e, s.id)} ondragend={endDrag} onclick={() => add(s.id)} title={s.blurb}>
                   <span class="label">{s.label}</span>
                   <span class="blurb">{s.blurb}</span>
                 </button>

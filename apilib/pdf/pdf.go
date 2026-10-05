@@ -199,6 +199,9 @@ func Build(r *report.Report) ([]byte, error) {
 			if it.Qty > 1 {
 				name = fmt.Sprintf("%g × %s", it.Qty, it.Name)
 			}
+			if it.Depth > 0 && it.OwnQty > 0 && it.OwnQty != it.Qty {
+				name = fmt.Sprintf("%g × %s (%g each)", it.Qty, it.Name, it.OwnQty)
+			}
 			detail := it.SKU
 			if it.Pricing != "" {
 				detail += " · " + it.Pricing

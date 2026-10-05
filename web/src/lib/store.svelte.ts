@@ -4,6 +4,8 @@ import type { Account, Estimate, Item, Priced, Provider, RegionBox } from './typ
 import { loadManifest } from './prices';
 import type { Manifest } from './prices';
 import { ctxFor, moveItem, newItem, priceItem, uid } from './engine';
+import { canHold, contains, findNode, walk } from './tree';
+import type { Node } from './tree';
 
 const DRAFT_KEY = 'csps-calc:draft';
 
@@ -62,11 +64,17 @@ loadManifest()
 // Lookups
 // ---------------------------------------------------------------------------------
 
-export function find(itemId: string): { acc: Account; box: RegionBox; item: Item } | undefined {
+export interface Found extends Node {
+  acc: Account;
+  box: RegionBox;
+}
+
+/** Finds an item anywhere in the estimate, however deep it sits. */
+export function find(itemId: string): Found | undefined {
   for (const acc of app.est.accounts)
     for (const box of acc.regions) {
-      const item = box.items.find((i) => i.id === itemId);
-      if (item) return { acc, box, item };
+      const n = findNode(box.items, itemId);
+      if (n) return { ...n, acc, box };
     }
   return undefined;
 }
@@ -90,21 +98,28 @@ function keyOf(provider: Provider, region: string, item: Item): string {
   return JSON.stringify([provider, region, item.svc, item.qty, item.spec, item.pricing ?? null]);
 }
 
+/** A copy of the item as it is priced: its count times every container above it. */
+function asPriced(n: Node): Item {
+  const { children: _c, ...rest } = $state.snapshot(n.item) as Item;
+  return { ...rest, qty: n.item.qty * n.mult };
+}
+
 export async function repriceAll(): Promise<void> {
   const m = app.manifest;
   const live = new Set<string>();
   const jobs: Promise<void>[] = [];
   for (const acc of app.est.accounts)
     for (const box of acc.regions)
-      for (const item of box.items) {
+      for (const node of walk(box.items)) {
+        const item = node.item;
         live.add(item.id);
-        const key = keyOf(acc.provider, box.region, item);
+        const snapshot = asPriced(node);
+        const key = keyOf(acc.provider, box.region, snapshot);
         const hit = memo.get(key);
         if (hit) {
           if (prices.get(item.id) !== hit) prices.set(item.id, hit);
           continue;
         }
-        const snapshot = $state.snapshot(item) as Item;
         const ctx = ctxFor(m, acc.provider, box.region);
         let p = inflight.get(key);
         if (!p) {
@@ -129,7 +144,7 @@ export async function repriceAll(): Promise<void> {
 export async function priceVariant(itemId: string, pricing: Item['pricing']): Promise<Priced | undefined> {
   const f = find(itemId);
   if (!f) return undefined;
-  const item = { ...($state.snapshot(f.item) as Item), pricing };
+  const item = { ...asPriced(f), pricing };
   const key = keyOf(f.acc.provider, f.box.region, item);
   const hit = memo.get(key);
   if (hit) return hit;
@@ -169,45 +184,82 @@ export function removeRegion(boxId: string): void {
   for (const acc of app.est.accounts) acc.regions = acc.regions.filter((r) => r.id !== boxId);
 }
 
-export function addItem(boxId: string, svcId: string, spec?: Item['spec']): void {
-  const f = findBox(boxId);
-  if (!f) return;
+/** Where a new or moved item lands: a region box, or inside a container item. */
+export interface Target {
+  boxId: string;
+  parentId?: string;
+}
+
+function targetList(t: Target): { acc: Account; box: RegionBox; list: Item[]; parentSvc: string | null } | undefined {
+  const b = findBox(t.boxId);
+  if (!b) return undefined;
+  if (!t.parentId) return { ...b, list: b.box.items, parentSvc: null };
+  const p = find(t.parentId);
+  if (!p || p.box.id !== t.boxId) return undefined;
+  p.item.children ??= [];
+  return { ...b, list: p.item.children, parentSvc: p.item.svc };
+}
+
+/** Why `svc` cannot go into the target, or undefined when it can. */
+export function refuse(t: Target, svc: string): string | undefined {
+  const parent = t.parentId ? find(t.parentId)?.item : undefined;
+  if (canHold(parent?.svc ?? null, svc)) return undefined;
+  return 'This card cannot hold that service.';
+}
+
+export function addItem(boxId: string, svcId: string, spec?: Item['spec'], parentId?: string): void {
+  if (refuse({ boxId, parentId }, svcId)) return;
+  const t = targetList({ boxId, parentId });
+  if (!t) return;
   const item = newItem(svcId);
   if (spec) item.spec = { ...item.spec, ...spec };
-  f.box.items.push(item);
+  t.list.push(item);
   app.selected = item.id;
+}
+
+function cloneTree(item: Item): Item {
+  return { ...item, id: uid(), children: item.children?.map(cloneTree) };
 }
 
 export function duplicateItem(itemId: string): void {
   const f = find(itemId);
   if (!f) return;
-  const copy = { ...($state.snapshot(f.item) as Item), id: uid() };
-  f.box.items.splice(f.box.items.indexOf(f.item) + 1, 0, copy);
+  const copy = cloneTree($state.snapshot(f.item) as Item);
+  f.list.splice(f.list.indexOf(f.item) + 1, 0, copy);
   app.selected = copy.id;
 }
 
 export function removeItem(itemId: string): void {
   const f = find(itemId);
   if (!f) return;
-  f.box.items = f.box.items.filter((i) => i.id !== itemId);
-  if (app.selected === itemId) app.selected = null;
-  app.ticked = app.ticked.filter((t) => t !== itemId);
+  const gone = new Set([...walk([f.item])].map((n) => n.item.id));
+  f.list.splice(f.list.indexOf(f.item), 1);
+  if (app.selected && gone.has(app.selected)) app.selected = null;
+  app.ticked = app.ticked.filter((t) => !gone.has(t));
 }
 
-/** Moves items into another box. Crossing to another cloud matches them by size. */
-export async function moveItems(itemIds: string[], toBoxId: string): Promise<void> {
-  const dest = findBox(toBoxId);
-  if (!dest) return;
+/** Moves items, with everything inside them, into a box or a container. Crossing to
+ *  another cloud matches each item by size. Moves the nesting rules forbid are skipped. */
+export async function moveItems(itemIds: string[], to: Target | string): Promise<number> {
+  const target: Target = typeof to === 'string' ? { boxId: to } : to;
+  let moved = 0;
   for (const id of itemIds) {
     const f = find(id);
-    if (!f || f.box.id === toBoxId) continue;
+    if (!f) continue;
+    if (target.parentId && contains(f.item, target.parentId)) continue; // into itself
+    if (refuse(target, f.item.svc)) continue;
+    const dest = targetList(target);
+    if (!dest || dest.list === f.list) continue;
     const snapshot = $state.snapshot(f.item) as Item;
-    const moved = await moveItem(snapshot, f.acc.provider, dest.acc.provider, ctxFor(app.manifest, dest.acc.provider, dest.box.region));
+    const next = await moveItem(snapshot, f.acc.provider, dest.acc.provider, ctxFor(app.manifest, dest.acc.provider, dest.box.region));
     const from = find(id);
-    if (!from) continue;
-    from.box.items = from.box.items.filter((i) => i.id !== id);
-    dest.box.items.push(moved);
+    const again = targetList(target);
+    if (!from || !again) continue;
+    from.list.splice(from.list.indexOf(from.item), 1);
+    again.list.push(next);
+    moved++;
   }
+  return moved;
 }
 
 /** Changes the region of several boxes at once (bulk region change). */

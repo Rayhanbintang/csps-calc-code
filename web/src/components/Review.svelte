@@ -5,6 +5,7 @@
   import { service } from '../lib/catalog';
   import { money } from '../lib/report';
   import RegionSelect from './RegionSelect.svelte';
+  import { walk } from '../lib/tree';
 
   const used = $derived([...new Set(app.est.accounts.map((a) => a.provider))].filter((p) => p !== 'onprem') as Provider[]);
   let pickedBoxes = $state<string[]>([]);
@@ -17,6 +18,8 @@
     const chosen = pickedBoxes.filter((id) => ids.includes(id));
     setRegion(chosen.length ? chosen : ids, target);
   }
+
+  const countOf = (items: Parameters<typeof walk>[0]) => [...walk(items)].length;
 
   const regionName = (provider: string, code: string) =>
     app.manifest?.providers[provider]?.regions.find((r) => r.code === code)?.name ?? code;
@@ -60,18 +63,18 @@
                 {#if acc.provider === 'onprem'}On-premises{:else}<RegionSelect provider={acc.provider} bind:value={box.region} />{/if}
                 {#if box.label}<div class="small muted">{box.label}</div>{/if}
               </td>
-              <td colspan="4" class="muted small">{box.items.length} item{box.items.length === 1 ? '' : 's'}</td>
+              <td colspan="4" class="muted small">{countOf(box.items)} item{countOf(box.items) === 1 ? '' : 's'}</td>
               <td class="num"><strong>{money(boxTotals(box, prices).monthly)}</strong></td>
               <td class="num">{money(boxTotals(box, prices).upfront)}</td>
             </tr>
-            {#each box.items as it (it.id)}
+            {#each [...walk(box.items)] as { item: it, mult, depth } (it.id)}
               {@const p = prices.get(it.id)}
               <tr class:bad={!!p?.unavailable} onclick={() => (app.selected = it.id)}>
                 <td></td><td></td>
                 <td class="muted small">{acc.provider === 'onprem' ? '' : regionName(acc.provider, box.region)}</td>
-                <td>{it.name || service(it.svc)?.label}{#if it.check}<span class="flag" title={it.check}> ⚑</span>{/if}</td>
+                <td style:padding-left="{8 + depth * 18}px">{depth ? '└ ' : ''}{it.name || service(it.svc)?.label}{#if it.check}<span class="flag" title={it.check}> ⚑</span>{/if}</td>
                 <td class="small">{p?.unavailable ?? p?.sku ?? ''}</td>
-                <td class="num">{it.qty}</td>
+                <td class="num">{it.qty * mult}{#if mult > 1}<span class="muted small"> ({it.qty} each)</span>{/if}</td>
                 <td class="small">{pricingLabel(acc.provider, it.svc, it.pricing)}</td>
                 <td class="num">{p ? money(p.monthly) : '…'}</td>
                 <td class="num">{p?.upfront ? money(p.upfront) : ''}</td>
