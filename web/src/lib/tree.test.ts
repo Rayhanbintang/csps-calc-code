@@ -72,3 +72,13 @@ describe('nesting rules', () => {
     expect(canHold('k8s', 'lb')).toBe(false);
   });
 });
+
+describe('quick-add buttons', () => {
+  it('every quick-add child is allowed in its container', async () => {
+    const { QUICK } = await import('./tree');
+    for (const [parent, list] of Object.entries(QUICK)) {
+      for (const [svc] of list) expect(canHold(parent === 'box' ? null : parent, svc), `${parent} > ${svc}`).toBe(true);
+    }
+    expect(QUICK.vm.map(([s]) => s)).toEqual(['disk']);
+  });
+});

@@ -14,6 +14,14 @@ export const providerNames: Record<Provider, string> = {
   onprem: 'On-premises',
 };
 
+/** What a site is called on each provider. */
+export const accountKinds: Record<Provider, { kind: string; ref: string }> = {
+  aws: { kind: 'AWS account', ref: 'Account ID' },
+  gcp: { kind: 'Google Cloud project', ref: 'Project ID' },
+  oci: { kind: 'OCI compartment', ref: 'Compartment' },
+  onprem: { kind: 'Data centre', ref: 'Location' },
+};
+
 export function ctxFor(manifest: Manifest | undefined, provider: Provider, region: string): Ctx {
   const regions = manifest?.providers[provider]?.regions ?? [];
   return { provider, region, info: regions.find((r) => r.code === region), regions };

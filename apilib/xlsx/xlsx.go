@@ -249,7 +249,7 @@ func Build(r *report.Report) ([]byte, error) {
 	s.add()
 	s.add(cell{"Site", st.header}, cell{"Cloud", st.header}, cell{"Region", st.header}, cell{"Per month (USD)", st.header}, cell{"Upfront (USD)", st.header}, cell{"First 12 months (USD)", st.header})
 	for _, a := range r.Accounts {
-		s.add(cell{a.Label, st.bold}, cell{a.ProviderName, st.bold}, cell{"", st.bold}, cell{a.Monthly, st.boldMoney}, cell{a.Upfront, st.boldMoney}, cell{a.Monthly*12 + a.Upfront, st.boldMoney})
+		s.add(cell{a.Site(), st.bold}, cell{a.ProviderName, st.bold}, cell{"", st.bold}, cell{a.Monthly, st.boldMoney}, cell{a.Upfront, st.boldMoney}, cell{a.Monthly*12 + a.Upfront, st.boldMoney})
 		for _, b := range a.Boxes {
 			region := b.RegionName
 			if b.Label != "" {
@@ -289,7 +289,7 @@ func Build(r *report.Report) ([]byte, error) {
 				if it.Unavailable != "" {
 					noteStyle = st.warn
 				}
-				ai.add(cell{a.Label, st.text}, cell{a.ProviderName, st.text}, cell{b.RegionName, st.text}, cell{itemLabel(it), st.text}, cell{it.Service, st.text}, cell{it.Product, st.text}, cell{it.SKU, st.text}, cell{it.Qty, st.qty}, cell{it.Pricing, st.text}, cell{it.Monthly, st.money}, cell{it.Upfront, st.money}, cell{withInside(it), st.money}, cell{notes(it), noteStyle})
+				ai.add(cell{a.Site(), st.text}, cell{a.ProviderName, st.text}, cell{b.RegionName, st.text}, cell{itemLabel(it), st.text}, cell{it.Service, st.text}, cell{it.Product, st.text}, cell{it.SKU, st.text}, cell{it.Qty, st.qty}, cell{it.Pricing, st.text}, cell{it.Monthly, st.money}, cell{it.Upfront, st.money}, cell{withInside(it), st.money}, cell{notes(it), noteStyle})
 			}
 		}
 	}
@@ -305,7 +305,7 @@ func Build(r *report.Report) ([]byte, error) {
 			name := sheetName(used, a.Label, b.Region)
 			f.NewSheet(name)
 			bs := newSheet(f, name, []float64{30, 34, 12, 14, 16, 16, 16})
-			title := fmt.Sprintf("%s · %s · %s", a.Label, a.ProviderName, b.RegionName)
+			title := fmt.Sprintf("%s · %s", a.Site(), b.RegionName)
 			if b.Label != "" {
 				title += " (" + b.Label + ")"
 			}

@@ -16,6 +16,8 @@ export interface Account {
   id: string;
   provider: Provider;
   label: string; // e.g. "DC" or "Production account"
+  /** Account ID, project ID, compartment or data-centre name. Optional, shown in exports. */
+  ref?: string;
   regions: RegionBox[];
 }
 

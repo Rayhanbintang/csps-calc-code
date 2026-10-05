@@ -69,3 +69,12 @@ export function subtotal(item: Item, price: (id: string) => { monthly: number; u
 export function size(item: Item): number {
   return 1 + (item.children ?? []).reduce((n, c) => n + size(c), 0);
 }
+
+/** Quick-add buttons per container, in the words an SA would use. The region box (key
+ *  "box") offers the usual starting points. Every child listed must pass canHold. */
+export const QUICK: Record<string, [string, string][]> = {
+  box: [['vpc', 'VPC'], ['db', 'Database'], ['object', 'Object storage'], ['egress', 'Data transfer']],
+  vpc: [['k8s', 'Kubernetes cluster'], ['vm', 'VM'], ['lb', 'Load balancer'], ['containers', 'Serverless containers']],
+  k8s: [['vm', 'Node group'], ['containers', 'Serverless pods']],
+  vm: [['disk', 'Block storage']],
+};

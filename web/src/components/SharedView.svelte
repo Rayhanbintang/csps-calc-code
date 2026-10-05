@@ -46,7 +46,7 @@
 
     {#each r.accounts as acc, ai}
       <section class="acc {acc.provider}">
-        <h2><span class="tag {acc.provider}">{acc.providerName}</span> {acc.label} <span class="num">{money(acc.monthly)} / mo</span></h2>
+        <h2><span class="tag {acc.provider}">{acc.providerName}</span> {acc.label} <span class="small muted kind">{acc.kind ?? ''}{acc.ref ? ` ${acc.ref}` : ''}</span> <span class="num">{money(acc.monthly)} / mo</span></h2>
         {#each acc.boxes as box, bi}
           <h3>{box.regionName}{box.label ? ` · ${box.label}` : ''} <span class="num muted">{money(box.monthly)} / mo</span></h3>
           <div class="scroll">
@@ -101,6 +101,7 @@
   .detail { background: var(--panel-2); }
   .ln { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .err { color: var(--danger); }
+  .kind { font-weight: 500; }
   .sub { color: var(--accent); font-weight: 600; }
   .disc { margin-top: 16px; color: var(--muted); }
 </style>

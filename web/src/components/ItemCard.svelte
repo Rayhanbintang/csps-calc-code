@@ -4,10 +4,17 @@
   import { app, prices, addItem, moveItems } from '../lib/store.svelte';
   import { service } from '../lib/catalog';
   import { money } from '../lib/report';
-  import { HOLDS, isContainer, subtotal } from '../lib/tree';
-  import { accepts, endDrag, startItems } from '../lib/drag';
+  import { QUICK, isContainer, subtotal } from '../lib/tree';
+  import { accepts, drag, endDrag, startItems } from '../lib/drag';
 
-  let { item, provider, boxId, mult = 1 }: { item: Item; provider: Provider; boxId: string; mult?: number } = $props();
+  let {
+    item,
+    provider,
+    boxId,
+    mult = 1,
+    parentId,
+    index,
+  }: { item: Item; provider: Provider; boxId: string; mult?: number; parentId?: string; index: number } = $props();
 
   const svc = $derived(service(item.svc));
   const p = $derived(prices.get(item.id));
@@ -16,8 +23,11 @@
   const kids = $derived(item.children ?? []);
   const total = $derived(kids.length ? subtotal(item, (id) => prices.get(id)) : undefined);
   const effective = $derived(item.qty * mult);
-  const holdsLabel = $derived((HOLDS[item.svc] ?? []).map((s) => service(s)?.label.toLowerCase()).join(', '));
+  const quick = $derived(QUICK[item.svc] ?? []);
 
+  // Drop on the card itself = place before or after it (reorder or insert as a sibling).
+  let edge = $state<'before' | 'after' | null>(null);
+  // Drop on the inside area = put it inside this card.
   let over = $state<'yes' | 'no' | null>(null);
 
   function dragStart(e: DragEvent) {
@@ -30,7 +40,30 @@
     app.ticked = on ? [...app.ticked, item.id] : app.ticked.filter((t) => t !== item.id);
   }
 
-  function onOver(e: DragEvent) {
+  function onCardOver(e: DragEvent) {
+    e.stopPropagation();
+    if (drag.ids?.includes(item.id) || !accepts(parentId)) {
+      edge = null;
+      return;
+    }
+    e.preventDefault();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    edge = e.clientY < r.top + r.height / 2 ? 'before' : 'after';
+  }
+
+  function onCardDrop(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const at = index + (edge === 'after' ? 1 : 0);
+    edge = null;
+    const svcId = e.dataTransfer?.getData('application/x-csps-svc');
+    if (svcId) addItem(boxId, svcId, undefined, parentId, at);
+    const ids = e.dataTransfer?.getData('application/x-csps-items');
+    if (ids) moveItems(JSON.parse(ids), { boxId, parentId }, at);
+    endDrag();
+  }
+
+  function onInsideOver(e: DragEvent) {
     e.stopPropagation();
     if (accepts(item.id)) {
       e.preventDefault();
@@ -38,7 +71,7 @@
     } else over = 'no';
   }
 
-  function onDrop(e: DragEvent) {
+  function onInsideDrop(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation();
     over = null;
@@ -57,9 +90,14 @@
     class:sel={app.selected === item.id}
     class:bad={!!p?.unavailable}
     class:check={!!item.check}
+    class:before={edge === 'before'}
+    class:after={edge === 'after'}
     draggable="true"
     ondragstart={dragStart}
     ondragend={endDrag}
+    ondragover={onCardOver}
+    ondragleave={() => (edge = null)}
+    ondrop={onCardDrop}
     role="button"
     tabindex="0"
     aria-label="{item.name || svc?.label}, {p ? money(p.monthly) : 'pricing'} a month"
@@ -100,16 +138,24 @@
       class:nope={over === 'no'}
       role="group"
       aria-label="Inside {item.name || svc?.label}"
-      ondragover={onOver}
+      ondragover={onInsideOver}
       ondragleave={(e) => { e.stopPropagation(); over = null; }}
-      ondrop={onDrop}
+      ondrop={onInsideDrop}
     >
-      {#each kids as child (child.id)}
-        <ItemCard item={child} {provider} {boxId} mult={effective} />
+      {#each kids as child, i (child.id)}
+        <ItemCard item={child} {provider} {boxId} mult={effective} parentId={item.id} index={i} />
       {/each}
-      <div class="hint small muted">
-        {#if over === 'no'}{svc?.label} cannot hold that.{:else}Drop {holdsLabel} here{/if}
-      </div>
+      {#if over === 'no'}
+        <div class="hint small nope-text">{svc?.label} cannot hold that.</div>
+      {:else if over === 'yes'}
+        <div class="hint small muted">Drop to put it inside</div>
+      {:else}
+        <div class="quick">
+          {#each quick as [childSvc, label]}
+            <button class="add small" onclick={(e) => { e.stopPropagation(); addItem(boxId, childSvc, undefined, item.id, undefined, childSvc === 'vm' && item.svc === 'k8s' ? label : undefined); }}>+ {label}</button>
+          {/each}
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -117,6 +163,7 @@
 <style>
   .wrap { display: grid; gap: 0; }
   .card {
+    position: relative;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
@@ -132,6 +179,18 @@
   .card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
   .card.bad { border-color: var(--danger); }
   .card.check { background: var(--warn-bg); border-color: var(--warn-line); }
+  /* Where a dragged card will land: a bar above or below this card. */
+  .card.before::before, .card.after::after {
+    content: '';
+    position: absolute;
+    left: -2px;
+    right: -2px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .card.before::before { top: -5px; }
+  .card.after::after { bottom: -5px; }
   input[type='checkbox'] { margin-top: 3px; }
   .title { font-weight: 600; overflow-wrap: anywhere; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
   .fold { padding: 0 3px; border: 0; line-height: 1; }
@@ -147,7 +206,7 @@
   .inside {
     display: grid;
     gap: 6px;
-    padding: 6px 6px 4px 10px;
+    padding: 6px 6px 6px 10px;
     border: 1px solid var(--line);
     border-top: 0;
     border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--line));
@@ -158,4 +217,14 @@
   .inside.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
   .inside.nope { border-color: var(--danger); }
   .hint { text-align: center; padding: 4px; }
+  .nope-text { color: var(--danger); }
+  .quick { display: flex; flex-wrap: wrap; gap: 5px; }
+  .add {
+    padding: 3px 9px;
+    font-size: 12px;
+    border-style: dashed;
+    background: transparent;
+    color: var(--muted);
+  }
+  .add:hover { color: var(--accent); border-color: var(--accent); border-style: solid; }
 </style>

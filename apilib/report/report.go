@@ -50,6 +50,8 @@ type Box struct {
 type Account struct {
 	Provider     string  `json:"provider"`
 	ProviderName string  `json:"providerName"`
+	Kind         string  `json:"kind"` // "AWS account", "Google Cloud project", ...
+	Ref          string  `json:"ref"`  // account ID, project ID or compartment; may be empty
 	Label        string  `json:"label"`
 	Monthly      float64 `json:"monthly"`
 	Upfront      float64 `json:"upfront"`
@@ -67,6 +69,23 @@ type Report struct {
 	FirstYear  float64   `json:"firstYear"`
 	ThreeYear  float64   `json:"threeYear"`
 	Accounts   []Account `json:"accounts"`
+}
+
+// Site names the account for people: "DC · AWS account 1234-5678".
+func (a Account) Site() string {
+	s := a.Label
+	kind := a.Kind
+	if kind == "" {
+		kind = a.ProviderName
+	}
+	if s != "" {
+		s += " · "
+	}
+	s += kind
+	if a.Ref != "" {
+		s += " " + a.Ref
+	}
+	return s
 }
 
 // Disclaimer goes on every page and file.

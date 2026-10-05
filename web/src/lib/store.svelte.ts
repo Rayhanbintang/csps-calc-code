@@ -207,13 +207,15 @@ export function refuse(t: Target, svc: string): string | undefined {
   return 'This card cannot hold that service.';
 }
 
-export function addItem(boxId: string, svcId: string, spec?: Item['spec'], parentId?: string): void {
+/** Adds a new item to a box or inside a container, at `index` (default: the end). */
+export function addItem(boxId: string, svcId: string, spec?: Item['spec'], parentId?: string, index?: number, name?: string): void {
   if (refuse({ boxId, parentId }, svcId)) return;
   const t = targetList({ boxId, parentId });
   if (!t) return;
   const item = newItem(svcId);
   if (spec) item.spec = { ...item.spec, ...spec };
-  t.list.push(item);
+  if (name) item.name = name;
+  t.list.splice(index ?? t.list.length, 0, item);
   app.selected = item.id;
 }
 
@@ -238,25 +240,35 @@ export function removeItem(itemId: string): void {
   app.ticked = app.ticked.filter((t) => !gone.has(t));
 }
 
-/** Moves items, with everything inside them, into a box or a container. Crossing to
- *  another cloud matches each item by size. Moves the nesting rules forbid are skipped. */
-export async function moveItems(itemIds: string[], to: Target | string): Promise<number> {
+/** Moves items, with everything inside them, into a box or a container, at `index`
+ *  (default: the end). Within the same container this reorders. Crossing to another
+ *  cloud matches each item by size. Moves the nesting rules forbid are skipped. */
+export async function moveItems(itemIds: string[], to: Target | string, index?: number): Promise<number> {
   const target: Target = typeof to === 'string' ? { boxId: to } : to;
   let moved = 0;
+  let at = index;
   for (const id of itemIds) {
     const f = find(id);
     if (!f) continue;
     if (target.parentId && contains(f.item, target.parentId)) continue; // into itself
     if (refuse(target, f.item.svc)) continue;
     const dest = targetList(target);
-    if (!dest || dest.list === f.list) continue;
+    if (!dest) continue;
     const snapshot = $state.snapshot(f.item) as Item;
-    const next = await moveItem(snapshot, f.acc.provider, dest.acc.provider, ctxFor(app.manifest, dest.acc.provider, dest.box.region));
+    const next = dest.list === f.list
+      ? snapshot
+      : await moveItem(snapshot, f.acc.provider, dest.acc.provider, ctxFor(app.manifest, dest.acc.provider, dest.box.region));
     const from = find(id);
     const again = targetList(target);
     if (!from || !again) continue;
-    from.list.splice(from.list.indexOf(from.item), 1);
-    again.list.push(next);
+    const old = from.list.indexOf(from.item);
+    from.list.splice(old, 1);
+    let pos = at ?? again.list.length;
+    // Removing the item shifts everything after it up by one.
+    if (from.list === again.list && old < pos) pos -= 1;
+    pos = Math.max(0, Math.min(pos, again.list.length));
+    again.list.splice(pos, 0, next);
+    if (at !== undefined) at = pos + 1; // keep a multi-item drop in order
     moved++;
   }
   return moved;

@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Provider } from '../lib/types';
   import { app, prices, addAccount, addRegion, removeAccount, removeRegion, addItem, moveItems } from '../lib/store.svelte';
-  import { accountTotals, boxTotals, providerNames } from '../lib/engine';
+  import { accountKinds, accountTotals, boxTotals, providerNames } from '../lib/engine';
+  import { QUICK, walk } from '../lib/tree';
   import { money } from '../lib/report';
   import ItemCard from './ItemCard.svelte';
   import RegionSelect from './RegionSelect.svelte';
@@ -51,18 +52,33 @@
 <div class="canvas">
   {#each app.est.accounts as acc (acc.id)}
     {@const t = accountTotals(acc, prices)}
-    <section class="account {acc.provider}" aria-label="{providerNames[acc.provider]} {acc.label}">
+    {@const k = accountKinds[acc.provider]}
+    {@const n = acc.regions.reduce((s, r) => s + [...walk(r.items)].length, 0)}
+    <section class="account {acc.provider}" aria-label="{k.kind} {acc.label}">
       <header>
-        <span class="tag {acc.provider}">{providerNames[acc.provider]}</span>
-        <label class="lbl editable">
-          <span class="sr-only">Site label</span>
-          <input bind:value={acc.label} placeholder="Label, for example DC" maxlength="60" />
-        </label>
-        <span class="total num">{money(t.monthly)}<span class="muted small"> / mo</span></span>
-        {#if acc.provider !== 'onprem'}
-          <button class="ghost small" onclick={() => addRegion(acc.id)}>+ Region</button>
-        {/if}
-        <button class="ghost small" aria-label="Remove {acc.label}" onclick={() => { if (confirm(`Remove ${acc.label || 'this site'} and everything in it?`)) removeAccount(acc.id); }}>✕</button>
+        <div class="ident">
+          <div class="kind"><span class="tag {acc.provider}">{providerNames[acc.provider]}</span><span class="small muted">{k.kind}</span></div>
+          <div class="names">
+            <label class="lbl editable">
+              <span class="sr-only">Site name</span>
+              <input bind:value={acc.label} placeholder="Name, for example DC" maxlength="60" />
+            </label>
+            <label class="ref editable">
+              <span class="sr-only">{k.ref}</span>
+              <input bind:value={acc.ref} placeholder="{k.ref} (optional)" maxlength="80" />
+            </label>
+          </div>
+        </div>
+        <div class="figures">
+          <span class="total num">{money(t.monthly)}<span class="muted small"> / mo</span></span>
+          <span class="small muted">{acc.regions.length} region{acc.regions.length === 1 ? '' : 's'} · {n} item{n === 1 ? '' : 's'}{t.upfront ? ` · ${money(t.upfront)} upfront` : ''}</span>
+        </div>
+        <div class="acts">
+          {#if acc.provider !== 'onprem'}
+            <button class="small" onclick={() => addRegion(acc.id)}>+ Region</button>
+          {/if}
+          <button class="ghost small" aria-label="Remove {acc.label}" title="Remove this {k.kind.toLowerCase()}" onclick={() => { if (confirm(`Remove ${acc.label || 'this site'} and everything in it?`)) removeAccount(acc.id); }}>✕</button>
+        </div>
       </header>
       <div class="regions">
         {#each acc.regions as box (box.id)}
@@ -90,10 +106,19 @@
               {/if}
             </div>
             <div class="items">
-              {#each box.items as item (item.id)}
-                <ItemCard {item} provider={acc.provider} boxId={box.id} />
+              {#each box.items as item, i (item.id)}
+                <ItemCard {item} provider={acc.provider} boxId={box.id} index={i} />
               {/each}
-              <div class="drop small muted">{box.items.length ? 'Drop here to add or move' : 'Drag services here, or click one in the list'}</div>
+              {#if acc.provider === 'onprem'}
+                <div class="quick"><button class="addq small" onclick={() => addItem(box.id, 'custom')}>+ Line item</button></div>
+              {:else}
+                <div class="quick">
+                  {#each QUICK.box as [svc, label]}
+                    <button class="addq small" onclick={() => addItem(box.id, svc)}>+ {label}</button>
+                  {/each}
+                </div>
+                {#if !box.items.length}<div class="drop small muted">or drag any service from the list</div>{/if}
+              {/if}
             </div>
           </div>
         {/each}
@@ -122,11 +147,17 @@
   .account.aws { border-left-color: var(--aws); }
   .account.gcp { border-left-color: var(--gcp); }
   .account.oci { border-left-color: var(--oci); }
-  header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .lbl { flex: 1 1 140px; }
-  .lbl { max-width: 260px; }
-  .lbl input { width: 100%; font-weight: 700; }
-  .total { font-weight: 700; }
+  header { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ident { display: grid; gap: 6px; flex: 1 1 280px; min-width: 0; }
+  .kind { display: flex; gap: 8px; align-items: center; }
+  .names { display: flex; gap: 8px; flex-wrap: wrap; }
+  .lbl { flex: 1 1 140px; max-width: 240px; }
+  .lbl input { width: 100%; font-weight: 700; font-size: 15px; }
+  .ref { flex: 1 1 140px; max-width: 220px; }
+  .ref input { width: 100%; font-size: 12.5px; font-family: var(--mono); }
+  .figures { display: grid; justify-items: end; gap: 2px; }
+  .total { font-weight: 800; font-size: 17px; }
+  .acts { display: flex; gap: 6px; align-items: center; }
   .regions { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 10px; }
   .box {
     border: 1px dashed var(--line);
@@ -142,7 +173,10 @@
   .boxhead { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
   .boxlabel { flex: 1 1 80px; font-size: 12px; padding: 4px 6px; }
   .items { display: grid; gap: 6px; }
-  .drop { text-align: center; padding: 8px 4px; border-radius: 7px; }
+  .drop { text-align: center; padding: 2px 4px 4px; }
+  .quick { display: flex; flex-wrap: wrap; gap: 5px; padding-top: 2px; }
+  .addq { padding: 3px 9px; font-size: 12px; border-style: dashed; background: transparent; color: var(--muted); }
+  .addq:hover { color: var(--accent); border-color: var(--accent); border-style: solid; }
   .add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--onprem); }
   .dot.aws { background: var(--aws); } .dot.gcp { background: var(--gcp); } .dot.oci { background: var(--oci); }

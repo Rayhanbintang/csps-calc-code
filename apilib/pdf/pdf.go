@@ -36,9 +36,9 @@ type doc struct {
 	tr func(string) string
 }
 
-func (d *doc) color(c rgb)      { d.SetTextColor(c.r, c.g, c.b) }
-func (d *doc) fill(c rgb)       { d.SetFillColor(c.r, c.g, c.b) }
-func (d *doc) draw(c rgb)       { d.SetDrawColor(c.r, c.g, c.b) }
+func (d *doc) color(c rgb)                     { d.SetTextColor(c.r, c.g, c.b) }
+func (d *doc) fill(c rgb)                      { d.SetFillColor(c.r, c.g, c.b) }
+func (d *doc) draw(c rgb)                      { d.SetDrawColor(c.r, c.g, c.b) }
 func (d *doc) font(style string, size float64) { d.SetFont("Helvetica", style, size) }
 
 // text writes a cell, converting UTF-8 to the PDF core font encoding.
@@ -141,7 +141,7 @@ func Build(r *report.Report) ([]byte, error) {
 		d.font("B", 9)
 		d.color(ink)
 		x, y := d.GetX(), d.GetY()
-		d.text(cols[0], 6.5, "   "+a.Label+"  ·  "+a.ProviderName, "L", true)
+		d.text(cols[0], 6.5, "   "+a.Site(), "L", true)
 		d.SetFillColor(c.r, c.g, c.b)
 		d.Rect(x, y, 1.6, 6.5, "F")
 		d.fill(band)

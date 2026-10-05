@@ -3,7 +3,7 @@
 import type { Estimate, Line, Priced, Provider } from './types';
 import type { Manifest } from './prices';
 import { service } from './catalog';
-import { pricingLabel, providerNames, sumTotals } from './engine';
+import { accountKinds, pricingLabel, providerNames, sumTotals } from './engine';
 import { subtotal, walk } from './tree';
 
 export interface ReportItem {
@@ -40,6 +40,10 @@ export interface ReportBox {
 export interface ReportAccount {
   provider: Provider;
   providerName: string;
+  /** "AWS account", "Google Cloud project", ... */
+  kind: string;
+  /** Account ID, project ID, compartment; may be empty. */
+  ref: string;
   label: string;
   monthly: number;
   upfront: number;
@@ -100,7 +104,15 @@ export function buildReport(est: Estimate, prices: Map<string, Priced>, manifest
         items,
       };
     });
-    return { provider: acc.provider, providerName: providerNames[acc.provider], label: acc.label, ...sumTotals(boxes), boxes };
+    return {
+      provider: acc.provider,
+      providerName: providerNames[acc.provider],
+      kind: accountKinds[acc.provider].kind,
+      ref: acc.ref ?? '',
+      label: acc.label,
+      ...sumTotals(boxes),
+      boxes,
+    };
   });
   const t = sumTotals(accounts);
   const dates = [...used].flatMap((p) => manifest?.providers[p]?.regions.map((r) => r.fetched) ?? []).sort();
