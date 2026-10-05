@@ -2,8 +2,6 @@
 package aws
 
 import (
-	"encoding/json"
-	"fmt"
 	"io"
 	"sort"
 	"strconv"
@@ -12,243 +10,215 @@ import (
 
 // Instance is one priced EC2 configuration: an instance type with one OS / licence combo.
 type Instance struct {
-	Type   string   `json:"t"`
-	VCPU   int      `json:"c"`
-	MemGiB float64  `json:"m"`
-	OS     string   `json:"os"`           // Linux, Windows, RHEL, SUSE, ...
-	SW     string   `json:"sw,omitempty"` // pre-installed software, e.g. "SQL Std"; empty = none
-	BYOL   bool     `json:"byol,omitempty"`
-	OnDem  float64  `json:"od"`           // USD per hour
-	RI     []RIRate `json:"ri,omitempty"` // Reserved Instance options
+	Type   string     `json:"t"`
+	VCPU   int        `json:"c"`
+	MemGiB float64    `json:"m"`
+	Arch   string     `json:"ar,omitempty"`  // "arm" for Graviton; empty = x86
+	OS     string     `json:"os"`            // Linux, Windows, RHEL, SUSE, ...
+	SW     string     `json:"sw,omitempty"`  // pre-installed software, e.g. "SQL Std"; empty = none
+	BYOL   bool       `json:"byol,omitempty"`
+	OnDem  float64    `json:"od"`            // USD per hour
+	RI     []Reserved `json:"ri,omitempty"`  // Reserved Instance options
+	SP     []SPRate   `json:"sp,omitempty"`  // Savings Plans options
+	usage  string
+	op     string
 }
 
-// RIRate is one Reserved Instance offer: term, class and payment option.
-type RIRate struct {
-	Term    int     `json:"y"`  // years: 1 or 3
-	Class   string  `json:"k"`  // "s" standard, "c" convertible
-	Pay     string  `json:"p"`  // "no", "partial", "all" upfront
-	Hourly  float64 `json:"h"`  // USD per hour
-	Upfront float64 `json:"u"`  // USD once
+// SPRate is the hourly rate of an instance under one Savings Plan.
+type SPRate struct {
+	Kind   string  `json:"k"` // "c" Compute SP, "e" EC2 Instance SP
+	Term   int     `json:"y"`
+	Pay    string  `json:"p"`
+	Hourly float64 `json:"h"`
 }
 
-type product struct {
-	SKU           string `json:"sku"`
-	ProductFamily string `json:"productFamily"`
-	Attributes    struct {
-		InstanceType    string `json:"instanceType"`
-		VCPU            string `json:"vcpu"`
-		Memory          string `json:"memory"`
-		OperatingSystem string `json:"operatingSystem"`
-		PreInstalledSw  string `json:"preInstalledSw"`
-		LicenseModel    string `json:"licenseModel"`
-		Tenancy         string `json:"tenancy"`
-		CapacityStatus  string `json:"capacitystatus"`
-		MarketOption    string `json:"marketoption"`
-		Operation       string `json:"operation"`
-	} `json:"attributes"`
+// Row is one non-instance price line (EBS, NAT gateway, load balancer hour, ...).
+type Row struct {
+	Key      string            `json:"k"`           // usage type without the region prefix
+	Op       string            `json:"o,omitempty"` // operation
+	Family   string            `json:"f,omitempty"`
+	Unit     string            `json:"u"`
+	Tiers    []Tier            `json:"t"`
+	Attr     map[string]string `json:"a,omitempty"`
+	Reserved []Reserved        `json:"ri,omitempty"`
 }
 
-type term struct {
-	PriceDimensions map[string]struct {
-		Unit         string            `json:"unit"`
-		PricePerUnit map[string]string `json:"pricePerUnit"`
-	} `json:"priceDimensions"`
-	TermAttributes struct {
-		LeaseContractLength string `json:"LeaseContractLength"`
-		OfferingClass       string `json:"OfferingClass"`
-		PurchaseOption      string `json:"PurchaseOption"`
-	} `json:"termAttributes"`
+// ec2Families are the non-instance EC2 product families the calculator prices.
+var ec2Families = map[string]bool{
+	"Storage": true, "System Operation": true, "Provisioned Throughput": true,
+	"Storage Snapshot": true, "NAT Gateway": true, "IP Address": true,
 }
 
-// ParseEC2 streams one region's AmazonEC2 offer file and returns shared-tenancy,
-// on-demand-capacity instances with their on-demand and Reserved prices.
-func ParseEC2(r io.Reader) ([]Instance, error) {
-	dec := json.NewDecoder(r)
-	keep := map[string]*Instance{}
+// EC2Result is everything taken from one region's AmazonEC2 offer file.
+type EC2Result struct {
+	Instances []Instance // shared-tenancy VMs with on-demand and Reserved prices
+	Rows      []Row      // EBS, NAT gateway, public IP
+	Location  string     // display name, e.g. "Asia Pacific (Jakarta)"
+	Prefix    string     // billing prefix of usage types, e.g. "APS4"; "USE1" for us-east-1
+}
 
-	if err := expectDelim(dec, '{'); err != nil {
+// ParseEC2 streams one region's AmazonEC2 offer file.
+func ParseEC2(r io.Reader) (*EC2Result, error) {
+	items, err := parseOffer(r, func(family string, a map[string]string) bool {
+		if family == "Compute Instance" {
+			return wantedInstance(a)
+		}
+		return ec2Families[family]
+	})
+	if err != nil {
 		return nil, err
 	}
-	for dec.More() {
-		key, err := stringToken(dec)
-		if err != nil {
-			return nil, err
+	res := &EC2Result{}
+	var others []*item
+	for _, it := range items {
+		if !it.hasOnDem {
+			continue
 		}
-		switch key {
-		case "products":
-			if err := eachObject(dec, func(sku string) error {
-				var p product
-				if err := dec.Decode(&p); err != nil {
-					return err
-				}
-				if inst, ok := wanted(p); ok {
-					keep[sku] = inst
-				}
-				return nil
-			}); err != nil {
-				return nil, fmt.Errorf("products: %w", err)
-			}
-		case "terms":
-			if err := eachObject(dec, func(kind string) error {
-				return eachObject(dec, func(sku string) error {
-					var offers map[string]term
-					if err := dec.Decode(&offers); err != nil {
-						return err
-					}
-					inst := keep[sku]
-					if inst == nil {
-						return nil
-					}
-					for _, t := range offers {
-						applyTerm(inst, kind, t)
-					}
-					return nil
-				})
-			}); err != nil {
-				return nil, fmt.Errorf("terms: %w", err)
-			}
-		default:
-			var skip json.RawMessage
-			if err := dec.Decode(&skip); err != nil {
-				return nil, err
-			}
+		if it.Family != "Compute Instance" {
+			others = append(others, it)
+			continue
 		}
+		inst, ok := toInstance(it)
+		if !ok {
+			continue
+		}
+		if res.Location == "" {
+			res.Location = it.Attr["location"]
+		}
+		if res.Prefix == "" {
+			res.Prefix = prefixOf(inst.usage)
+		}
+		res.Instances = append(res.Instances, inst)
 	}
-
-	out := make([]Instance, 0, len(keep))
-	for _, inst := range keep {
-		if inst.OnDem <= 0 {
-			continue // no on-demand price = not orderable as a normal VM here
-		}
-		sort.Slice(inst.RI, func(i, j int) bool {
-			a, b := inst.RI[i], inst.RI[j]
-			if a.Term != b.Term {
-				return a.Term < b.Term
-			}
-			if a.Class != b.Class {
-				return a.Class > b.Class
-			}
-			return a.Pay < b.Pay
-		})
-		out = append(out, *inst)
+	for _, it := range others {
+		res.Rows = append(res.Rows, toRow(it, res.Prefix, []string{"volumeApiName"}))
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Type != out[j].Type {
-			return out[i].Type < out[j].Type
-		}
-		if out[i].OS != out[j].OS {
-			return out[i].OS < out[j].OS
-		}
-		if out[i].SW != out[j].SW {
-			return out[i].SW < out[j].SW
-		}
-		return !out[i].BYOL && out[j].BYOL
-	})
-	return out, nil
+	sortInstances(res.Instances)
+	sortRows(res.Rows)
+	return res, nil
 }
 
-func wanted(p product) (*Instance, bool) {
-	a := p.Attributes
-	if p.ProductFamily != "Compute Instance" || a.Tenancy != "Shared" ||
-		a.CapacityStatus != "Used" || (a.MarketOption != "" && a.MarketOption != "OnDemand") {
-		return nil, false
+// prefixOf reads the billing prefix from an instance usage type:
+// "APS4-BoxUsage:m5.large" -> "APS4"; "BoxUsage:m5.large" (us-east-1) -> "USE1".
+func prefixOf(usage string) string {
+	if i := strings.Index(usage, "-BoxUsage:"); i > 0 {
+		return usage[:i]
+	}
+	return "USE1"
+}
+
+func wantedInstance(a map[string]string) bool {
+	if a["tenancy"] != "Shared" || a["capacitystatus"] != "Used" {
+		return false
+	}
+	if mo := a["marketoption"]; mo != "" && mo != "OnDemand" {
+		return false
 	}
 	// "RunInstances:0002:box" and friends are the infrastructure-only half of a
 	// licence-included SKU; the licence is billed on a separate line. The full price
 	// a customer pays sits on the operation without ":box".
-	if strings.HasSuffix(a.Operation, ":box") {
-		return nil, false
-	}
-	vcpu, err := strconv.Atoi(a.VCPU)
+	return !strings.HasSuffix(a["operation"], ":box")
+}
+
+func toInstance(it *item) (Instance, bool) {
+	a := it.Attr
+	vcpu, err := strconv.Atoi(a["vcpu"])
 	if err != nil {
-		return nil, false
+		return Instance{}, false
 	}
-	mem, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(strings.ReplaceAll(a.Memory, ",", ""), "GiB")), 64)
+	mem, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(strings.ReplaceAll(a["memory"], ",", ""), "GiB")), 64)
 	if err != nil {
-		return nil, false
+		return Instance{}, false
 	}
-	sw := a.PreInstalledSw
+	if len(it.Tiers) == 0 || it.Tiers[0].USD <= 0 {
+		return Instance{}, false // no on-demand price = not orderable as a normal VM here
+	}
+	sw := a["preInstalledSw"]
 	if sw == "NA" {
 		sw = ""
 	}
-	return &Instance{
-		Type:   a.InstanceType,
-		VCPU:   vcpu,
-		MemGiB: mem,
-		OS:     a.OperatingSystem,
-		SW:     sw,
-		BYOL:   a.LicenseModel == "Bring your own license",
+	// processorArchitecture says "64-bit" for both Intel and Graviton; the processor
+	// name is the reliable signal.
+	arch := ""
+	if strings.Contains(a["physicalProcessor"], "Graviton") || strings.Contains(strings.ToLower(a["processorArchitecture"]), "arm") {
+		arch = "arm"
+	}
+	sortReserved(it.Reserved)
+	return Instance{
+		Type: a["instanceType"], VCPU: vcpu, MemGiB: mem, Arch: arch,
+		OS: a["operatingSystem"], SW: sw, BYOL: a["licenseModel"] == "Bring your own license",
+		OnDem: it.Tiers[0].USD, RI: it.Reserved,
+		usage: a["usagetype"], op: a["operation"],
 	}, true
 }
 
-func applyTerm(inst *Instance, kind string, t term) {
-	var hourly, upfront float64
-	for _, d := range t.PriceDimensions {
-		v, _ := strconv.ParseFloat(d.PricePerUnit["USD"], 64)
-		switch d.Unit {
-		case "Hrs":
-			hourly = v
-		case "Quantity":
-			upfront = v
+// toRow converts an item to a Row, keeping only the listed attributes.
+func toRow(it *item, prefix string, attrs []string) Row {
+	row := Row{
+		Key: stripPrefix(it.Attr["usagetype"], prefix), Op: it.Attr["operation"],
+		Family: it.Family, Unit: it.Unit, Tiers: it.Tiers,
+	}
+	for _, k := range attrs {
+		if v := it.Attr[k]; v != "" && v != "NA" {
+			if row.Attr == nil {
+				row.Attr = map[string]string{}
+			}
+			row.Attr[k] = v
 		}
 	}
-	switch kind {
-	case "OnDemand":
-		inst.OnDem = hourly
-	case "Reserved":
-		ta := t.TermAttributes
-		years := 1
-		if ta.LeaseContractLength == "3yr" {
-			years = 3
-		}
-		class := "s"
-		if ta.OfferingClass == "convertible" {
-			class = "c"
-		}
-		pay := map[string]string{"No Upfront": "no", "Partial Upfront": "partial", "All Upfront": "all"}[ta.PurchaseOption]
-		if pay == "" {
-			return
-		}
-		inst.RI = append(inst.RI, RIRate{Term: years, Class: class, Pay: pay, Hourly: hourly, Upfront: upfront})
+	if len(it.Reserved) > 0 {
+		sortReserved(it.Reserved)
+		row.Reserved = it.Reserved
 	}
+	return row
 }
 
-func expectDelim(dec *json.Decoder, want json.Delim) error {
-	tok, err := dec.Token()
-	if err != nil {
-		return err
+// stripPrefix removes the billing region prefix ("APS4-") from a usage type.
+// us-east-1 uses either no prefix or "USE1-" depending on the service.
+func stripPrefix(usage, prefix string) string {
+	if prefix != "" && strings.HasPrefix(usage, prefix+"-") {
+		return usage[len(prefix)+1:]
 	}
-	if d, ok := tok.(json.Delim); !ok || d != want {
-		return fmt.Errorf("expected %q, got %v", want, tok)
-	}
-	return nil
+	return usage
 }
 
-func stringToken(dec *json.Decoder) (string, error) {
-	tok, err := dec.Token()
-	if err != nil {
-		return "", err
-	}
-	s, ok := tok.(string)
-	if !ok {
-		return "", fmt.Errorf("expected object key, got %v", tok)
-	}
-	return s, nil
+func sortInstances(out []Instance) {
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Type != b.Type {
+			return a.Type < b.Type
+		}
+		if a.OS != b.OS {
+			return a.OS < b.OS
+		}
+		if a.SW != b.SW {
+			return a.SW < b.SW
+		}
+		return !a.BYOL && b.BYOL
+	})
 }
 
-// eachObject walks an object value key by key; fn must consume the value.
-func eachObject(dec *json.Decoder, fn func(key string) error) error {
-	if err := expectDelim(dec, '{'); err != nil {
-		return err
-	}
-	for dec.More() {
-		key, err := stringToken(dec)
-		if err != nil {
-			return err
+func sortRows(rows []Row) {
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Key != rows[j].Key {
+			return rows[i].Key < rows[j].Key
 		}
-		if err := fn(key); err != nil {
-			return fmt.Errorf("%s: %w", key, err)
+		if rows[i].Op != rows[j].Op {
+			return rows[i].Op < rows[j].Op
 		}
+		return attrKey(rows[i].Attr) < attrKey(rows[j].Attr)
+	})
+}
+
+func attrKey(a map[string]string) string {
+	keys := make([]string, 0, len(a))
+	for k := range a {
+		keys = append(keys, k)
 	}
-	return expectDelim(dec, '}')
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k + "=" + a[k] + ";")
+	}
+	return b.String()
 }

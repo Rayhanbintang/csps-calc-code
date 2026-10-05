@@ -1,0 +1,97 @@
+# Builds and deploys csps-calc to Vercel.
+#
+# - Every day: fetch fresh prices from AWS, Google Cloud and Oracle, test, deploy.
+# - Push to main: reuse the prices already live (mirror) and deploy the new code.
+#   If nothing is live yet, it fetches.
+# - Manual run: choose a full fetch or a mirror.
+#
+# Only schedule, push to main and manual runs trigger this workflow, never pull
+# requests, so code from a fork never runs with these secrets.
+name: deploy
+
+on:
+  schedule:
+    - cron: "17 21 * * *" # 04:17 in Jakarta, daily
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      prices:
+        description: "Price source"
+        type: choice
+        options: [fetch, mirror]
+        default: fetch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  SITE: https://csps-calc.vercel.app
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: etl/go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Test the price fetcher
+        working-directory: etl
+        run: go vet ./... && go test ./...
+
+      - name: Test the API
+        run: go vet ./api/... ./apilib/... && go build ./...
+
+      - name: Get prices
+        working-directory: etl
+        env:
+          GCP_BILLING_API_KEY: ${{ secrets.GCP_BILLING_API_KEY }}
+          MODE: ${{ github.event_name == 'schedule' && 'fetch' || github.event_name == 'push' && 'mirror' || inputs.prices }}
+        run: |
+          out=../web/public/prices
+          if [ "$MODE" = "mirror" ] && go run ./cmd/fetch -out "$out" -mirror "$SITE"; then
+            echo "Mirrored the live prices."
+          else
+            rm -rf "$out"
+            go run ./cmd/fetch -out "$out" -providers aws,gcp,oci -parallel 6 -fallback "$SITE"
+          fi
+          du -sh "$out"
+          find "$out" -type f | wc -l
+
+      - name: Test the calculator against the prices
+        working-directory: web
+        run: npm ci && npm run check && npm test
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          npm install --global vercel@latest
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+      - name: Check the live site
+        run: |
+          sleep 20
+          curl -fsS "$SITE/" | grep -q "csps-calc"
+          curl -fsS "$SITE/prices/manifest.json" | grep -q '"aws"'
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$SITE/api/estimates?slug=AAAAAAAAAAAA")
+          test "$code" = "404"

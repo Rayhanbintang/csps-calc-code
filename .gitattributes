@@ -1,0 +1,6 @@
+# Keep every text file LF in the repo and in the working tree, whatever the OS.
+* text=auto eol=lf
+*.png binary
+*.gz binary
+*.xlsx binary
+*.pdf binary
