@@ -1,7 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { app, find, repriceAll, saveDraft } from '../lib/store.svelte';
+  import { app, find, repriceAll, saveTabs } from '../lib/store.svelte';
   import Header from './Header.svelte';
+  import Tabs from './Tabs.svelte';
   import Palette from './Palette.svelte';
   import Canvas from './Canvas.svelte';
   import Review from './Review.svelte';
@@ -14,10 +15,12 @@
   // The pricing run itself is untracked: it reads and writes state (prices, the busy
   // counter) that must not trigger this effect again.
   $effect(() => {
-    const json = JSON.stringify(app.est);
+    void JSON.stringify(app.est);
+    void app.tab;
+    void app.tabs.length;
     void app.manifest;
     untrack(() => {
-      saveDraft(JSON.parse(json));
+      saveTabs();
       repriceAll();
     });
   });
@@ -69,6 +72,7 @@
 
 <div class="shell">
   <Header />
+  <Tabs />
   {#if app.manifestError}
     <div class="error" role="alert">The price list did not load ({app.manifestError}). Reload the page in a minute.</div>
   {/if}

@@ -121,7 +121,7 @@
     <div class="main">
       <div class="title">
         {#if container}
-          <button class="fold ghost" aria-expanded={!item.folded} aria-label={item.folded ? 'Show what is inside' : 'Hide what is inside'}
+          <button class="fold ghost" aria-expanded={!item.folded} aria-label={item.folded ? 'Show what is inside' : 'Hide what is inside'} title={item.folded ? 'Show what is inside' : 'Hide what is inside'}
             onclick={(e) => { e.stopPropagation(); item.folded = !item.folded; }}>
             <span class="chev" class:open={!item.folded}>▸</span>
           </button>
@@ -225,8 +225,10 @@
   .card.after::after { bottom: -5px; }
   input[type='checkbox'] { margin-top: 3px; }
   .title { font-weight: 600; overflow-wrap: anywhere; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-  .fold { padding: 0 3px; border: 0; line-height: 1; }
-  .chev { display: inline-block; transition: transform 0.12s; font-size: 11px; color: var(--muted); }
+  .fold { width: 22px; height: 22px; padding: 0; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; line-height: 1; background: var(--panel); }
+  .fold:hover { border-color: var(--accent); }
+  .fold:hover .chev { color: var(--accent); }
+  .chev { display: inline-block; transition: transform 0.12s; font-size: 13px; color: var(--text); }
   .chev.open { transform: rotate(90deg); }
   .qty { color: var(--accent); }
   .mult { font-size: 11px; font-weight: 600; color: var(--muted); }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, prices, replaceEstimate, blankEstimate } from '../lib/store.svelte';
+  import { app, prices, newTab } from '../lib/store.svelte';
   import { buildReport, dateOnly } from '../lib/report';
   import { download, saveEstimate } from '../lib/api';
 
@@ -41,9 +41,6 @@
       }
     });
 
-  function reset() {
-    if (confirm('Start a new, empty estimate? The current one stays only if you saved a link.')) replaceEstimate(blankEstimate());
-  }
 </script>
 
 <header>
@@ -57,7 +54,7 @@
   </label>
   <span class="asof small muted" title="Prices refresh every day from each provider's public price list.">Prices as of {dateOnly(asOf)}</span>
   <div class="actions">
-    <button onclick={reset}>New</button>
+    <button onclick={newTab} title="Open a new, empty estimate in another tab">New</button>
     <button onclick={() => run('Building the spreadsheet…', () => download(report(), 'xlsx'))} disabled={!!working}>Excel</button>
     <button onclick={() => run('Building the PDF…', () => download(report(), 'pdf'))} disabled={!!working}>PDF</button>
     <button class="primary" onclick={share} disabled={!!working}>Share link</button>

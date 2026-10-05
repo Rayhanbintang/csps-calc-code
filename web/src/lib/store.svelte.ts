@@ -3,16 +3,17 @@ import { SvelteMap } from 'svelte/reactivity';
 import type { Account, Estimate, Item, Priced, Provider, RegionBox } from './types';
 import { loadManifest } from './prices';
 import type { Manifest } from './prices';
-import { ctxFor, moveItem, newItem, priceItem, uid } from './engine';
+import { ctxFor, estimateTotals, moveItem, newItem, priceItem, uid } from './engine';
 import { canHold, contains, findNode, walk } from './tree';
 import type { Node } from './tree';
 
-const DRAFT_KEY = 'csps-calc:draft';
+const DRAFT_KEY = 'csps-calc:draft'; // before tabs: one estimate
+const TABS_KEY = 'csps-calc:tabs';
 
-export function blankEstimate(): Estimate {
+export function blankEstimate(name = 'Untitled estimate'): Estimate {
   return {
     v: 1,
-    name: 'Untitled estimate',
+    name,
     accounts: [
       {
         id: uid('a'),
@@ -24,27 +25,76 @@ export function blankEstimate(): Estimate {
   };
 }
 
-function loadDraft(): Estimate | undefined {
+/** One open estimate. The tab on screen keeps its estimate in `app.est`; the others wait here. */
+export interface Tab {
+  id: string;
+  est: Estimate;
+  /** Monthly total when the tab was last on screen, so the tab bar can compare options. */
+  monthly?: number;
+}
+
+interface Saved {
+  tabs: Tab[];
+  current: string;
+}
+
+function valid(e: unknown): e is Estimate {
+  const x = e as Estimate;
+  return !!x && x.v === 1 && Array.isArray(x.accounts);
+}
+
+function loadTabs(): Saved {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (!raw) return undefined;
-    const e = JSON.parse(raw) as Estimate;
-    return e && e.v === 1 && Array.isArray(e.accounts) ? e : undefined;
+    const raw = localStorage.getItem(TABS_KEY);
+    if (raw) {
+      const s = JSON.parse(raw) as Saved;
+      const tabs = (s.tabs ?? []).filter((t) => t && typeof t.id === 'string' && valid(t.est));
+      if (tabs.length) return { tabs, current: tabs.some((t) => t.id === s.current) ? s.current : tabs[0].id };
+    }
+    const old = localStorage.getItem(DRAFT_KEY);
+    const e = old ? JSON.parse(old) : undefined;
+    if (valid(e)) {
+      const id = uid('t');
+      return { tabs: [{ id, est: e }], current: id };
+    }
   } catch {
-    return undefined;
+    /* storage blocked or damaged: start fresh */
+  }
+  const id = uid('t');
+  return { tabs: [{ id, est: blankEstimate() }], current: id };
+}
+
+function store(s: Saved): void {
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify(s));
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* private mode or storage full: the tabs live only in this page */
   }
 }
 
-export function saveDraft(e: Estimate): void {
-  try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(e));
-  } catch {
-    /* private mode or storage full: the draft lives only in this tab */
-  }
+/** Keeps every tab in this browser, with the one on screen up to date. */
+export function saveTabs(): void {
+  const cur = $state.snapshot(app.est) as Estimate;
+  store({
+    tabs: app.tabs.map((t) => (t.id === app.tab ? { id: t.id, est: cur } : ($state.snapshot(t) as Tab))),
+    current: app.tab,
+  });
 }
+
+/** Opens an estimate as a new tab the next time the editor loads (the shared page uses it). */
+export function saveDraft(e: Estimate): void {
+  const s = loadTabs();
+  const id = uid('t');
+  store({ tabs: [...s.tabs, { id, est: e }], current: id });
+}
+
+const start = loadTabs();
 
 export const app = $state({
-  est: loadDraft() ?? blankEstimate(),
+  est: structuredClone(start.tabs.find((t) => t.id === start.current)!.est),
+  tabs: start.tabs,
+  tab: start.current,
   manifest: undefined as Manifest | undefined,
   manifestError: '',
   selected: null as string | null,
@@ -282,8 +332,68 @@ export function setRegion(boxIds: string[], region: string): void {
   }
 }
 
-export function replaceEstimate(e: Estimate): void {
-  app.est = e;
+// ---------------------------------------------------------------------------------
+// Tabs: several estimates open at once, for example options A and B for one customer.
+// ---------------------------------------------------------------------------------
+
+function show(id: string): void {
+  const cur = app.tabs.find((t) => t.id === app.tab);
+  if (cur) {
+    cur.est = $state.snapshot(app.est) as Estimate;
+    cur.monthly = estimateTotals(app.est, prices).monthly;
+  }
+  const next = app.tabs.find((t) => t.id === id);
+  if (!next) return;
+  app.tab = id;
+  app.est = $state.snapshot(next.est) as Estimate;
   app.selected = null;
   app.ticked = [];
+}
+
+export function openTab(id: string): void {
+  if (id !== app.tab) show(id);
+}
+
+export function newTab(): void {
+  const id = uid('t');
+  app.tabs.push({ id, est: blankEstimate(`Option ${app.tabs.length + 1}`) });
+  show(id);
+}
+
+/** Every id is new, so prices and selections of the two copies never mix. */
+function fresh(e: Estimate): Estimate {
+  const item = (i: Item): Item => ({ ...i, id: uid(), children: i.children?.map(item) });
+  return {
+    ...e,
+    accounts: e.accounts.map((a) => ({ ...a, id: uid('a'), regions: a.regions.map((r) => ({ ...r, id: uid('r'), items: r.items.map(item) })) })),
+  };
+}
+
+export function duplicateTab(id: string): void {
+  const src = id === app.tab ? app.est : app.tabs.find((t) => t.id === id)?.est;
+  if (!src) return;
+  const copy = fresh($state.snapshot(src) as Estimate);
+  copy.name = `${copy.name} (copy)`;
+  const nid = uid('t');
+  app.tabs.splice(app.tabs.findIndex((t) => t.id === id) + 1, 0, { id: nid, est: copy });
+  show(nid);
+}
+
+export function closeTab(id: string): void {
+  const i = app.tabs.findIndex((t) => t.id === id);
+  if (i < 0) return;
+  if (app.tabs.length === 1) {
+    app.est = blankEstimate();
+    app.tabs[0].est = $state.snapshot(app.est) as Estimate;
+    app.selected = null;
+    app.ticked = [];
+    return;
+  }
+  if (id === app.tab) show(app.tabs[i === 0 ? 1 : i - 1].id);
+  app.tabs.splice(i, 1);
+}
+
+/** Name of a tab: the one on screen reads the live estimate. */
+export function tabName(t: Tab): string {
+  return (t.id === app.tab ? app.est.name : t.est.name) || 'Untitled estimate';
 }

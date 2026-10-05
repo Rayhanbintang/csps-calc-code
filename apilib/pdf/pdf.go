@@ -227,6 +227,65 @@ func Build(r *report.Report) ([]byte, error) {
 		d.Ln(5)
 	}
 
+	// Every item, nested as on the canvas: VPC > cluster > node group > disk.
+	if len(items) > 0 {
+		section(d, "Items by site and region")
+		tc := []float64{contW * 0.50, contW * 0.34, contW * 0.16}
+		header(d, tc, []string{"Item", "Type / pricing", "Per month"})
+		for _, a := range r.Accounts {
+			for _, b := range a.Boxes {
+				if len(b.Items) == 0 {
+					continue
+				}
+				if d.GetY() > 262 {
+					d.AddPage()
+				}
+				d.font("B", 8.5)
+				d.color(ink)
+				d.fill(band)
+				name := a.Site() + " · " + b.RegionName
+				if b.Label != "" {
+					name += " (" + b.Label + ")"
+				}
+				d.CellFormat(contW, 6, d.fit(name, contW-2), "", 1, "L", true, 0, "")
+				for _, it := range b.Items {
+					detail := it.SKU
+					if it.Pricing != "" {
+						detail += " · " + it.Pricing
+					}
+					if it.Unavailable != "" {
+						detail = "Not priced"
+					}
+					indent := 2 + 4.5*float64(it.Depth)
+					d.draw(rule)
+					d.font("", 8.5)
+					if it.Depth == 0 {
+						d.font("B", 8.5)
+					}
+					d.color(ink)
+					x, y := d.GetX(), d.GetY()
+					d.CellFormat(tc[0], 5.6, "", "B", 0, "L", false, 0, "")
+					d.SetXY(x+indent, y)
+					d.CellFormat(tc[0]-indent, 5.6, d.fit(treeLabel(it), tc[0]-indent-1), "", 0, "L", false, 0, "")
+					if it.Depth > 0 {
+						// A short elbow ties a child to the card above it.
+						d.draw(rule)
+						d.Line(x+indent-2.6, y, x+indent-2.6, y+2.8)
+						d.Line(x+indent-2.6, y+2.8, x+indent-0.8, y+2.8)
+					}
+					d.SetXY(x+tc[0], y)
+					d.font("", 8.5)
+					d.color(muted)
+					d.CellFormat(tc[1], 5.6, d.fit(detail, tc[1]-1), "B", 0, "L", false, 0, "")
+					d.color(ink)
+					d.CellFormat(tc[2], 5.6, money(it.Monthly), "B", 1, "R", false, 0, "")
+				}
+				d.Ln(2)
+			}
+		}
+		d.Ln(4)
+	}
+
 	// Assumptions
 	section(d, "Assumptions")
 	d.font("", 9)
@@ -253,6 +312,18 @@ func Build(r *report.Report) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// treeLabel names an item with its count, e.g. "6 × Data disk (2 each)" for two disks on
+// each of three VMs. The indent shows the nesting, so the label carries no padding.
+func treeLabel(it report.Item) string {
+	switch {
+	case it.OwnQty > 0 && it.OwnQty != it.Qty:
+		return fmt.Sprintf("%g × %s (%g each)", it.Qty, it.Name, it.OwnQty)
+	case it.Qty > 1:
+		return fmt.Sprintf("%g × %s", it.Qty, it.Name)
+	}
+	return it.Name
 }
 
 func section(d *doc, title string) {

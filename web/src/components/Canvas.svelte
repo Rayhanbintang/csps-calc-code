@@ -7,6 +7,8 @@
   import ItemCard from './ItemCard.svelte';
   import RegionSelect from './RegionSelect.svelte';
   import { endDrag } from '../lib/drag';
+  import { blockerMessage, swapAccount, swapBlockers } from '../lib/swap';
+  import type { Account } from '../lib/types';
 
   let over = $state<string | null>(null);
 
@@ -32,7 +34,64 @@
   let moveTo = $state('');
 
   const providers: Provider[] = ['aws', 'gcp', 'oci', 'onprem'];
+  const clouds: Provider[] = ['aws', 'gcp', 'oci'];
+
+  /** Shown in the middle of the screen when a site cannot switch cloud. */
+  let blocked = $state<{ text: string; list: { name: string; reason: string }[] } | null>(null);
+  let switching = $state('');
+  /** Short note after a switch: where each region box went. */
+  let swapped = $state<{ accId: string; text: string } | null>(null);
+
+  async function swap(acc: Account, to: Provider, sel: HTMLSelectElement) {
+    sel.value = acc.provider;
+    if (to === acc.provider) return;
+    const missing = swapBlockers(acc, to);
+    if (missing.length) {
+      blocked = { text: blockerMessage(to, missing), list: [] };
+      return;
+    }
+    const from = acc.provider;
+    const priced = new Set([...prices].filter(([, p]) => !p.unavailable).map(([id]) => id));
+    switching = acc.id;
+    let res;
+    try {
+      res = await swapAccount($state.snapshot(acc) as Account, to, app.manifest, priced);
+    } finally {
+      switching = '';
+    }
+    const { acc: next, moves, blockers } = res;
+    if (blockers.length) {
+      blocked = {
+        text: `${providerNames[to]} has no match for ${blockers.length === 1 ? 'one item' : `${blockers.length} items`} in this site, so the site cannot switch to ${providerNames[to]}. The site stays on ${providerNames[from]}.`,
+        list: blockers,
+      };
+      return;
+    }
+    const i = app.est.accounts.findIndex((a) => a.id === acc.id);
+    if (i < 0) return;
+    app.est.accounts[i] = next;
+    app.selected = null;
+    const where = [...new Set(moves.map(([a, b]) => `${a} → ${b}`))].join(', ');
+    swapped = { accId: acc.id, text: `Switched from ${providerNames[from]} to ${providerNames[to]}. Regions: ${where}. Items marked ⚑ need a check.` };
+  }
 </script>
+
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && blocked) blocked = null; }} />
+
+{#if blocked}
+  <div class="veil" role="presentation" onclick={() => (blocked = null)}>
+    <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="swap-title" aria-describedby="swap-text" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+      <h2 id="swap-title">Cannot switch cloud</h2>
+      <p id="swap-text">{blocked.text}</p>
+      {#if blocked.list.length}
+        <ul>
+          {#each blocked.list as b}<li><strong>{b.name}</strong>: {b.reason}</li>{/each}
+        </ul>
+      {/if}
+      <button class="primary" onclick={() => (blocked = null)}>OK</button>
+    </div>
+  </div>
+{/if}
 
 {#if app.ticked.length}
   <div class="bulk" role="region" aria-label="Bulk actions">
@@ -57,7 +116,20 @@
     <section class="account {acc.provider}" aria-label="{k.kind} {acc.label}">
       <header>
         <div class="ident">
-          <div class="kind"><span class="tag {acc.provider}">{providerNames[acc.provider]}</span><span class="small muted">{k.kind}</span></div>
+          <div class="kind">
+            <button class="fold ghost" aria-expanded={!acc.folded} aria-label={acc.folded ? 'Show this site' : 'Fold this site'} title={acc.folded ? 'Show this site' : 'Fold this site'} onclick={() => (acc.folded = !acc.folded)}>
+              <span class="chev" class:open={!acc.folded}>▸</span>
+            </button>
+            {#if acc.provider === 'onprem'}
+              <span class="tag {acc.provider}">{providerNames[acc.provider]}</span>
+            {:else}
+              <select class="cloud {acc.provider}" value={acc.provider} title="Switch this site to another cloud" aria-label="Cloud of {acc.label}"
+                onchange={(e) => swap(acc, (e.currentTarget as HTMLSelectElement).value as Provider, e.currentTarget as HTMLSelectElement)}>
+                {#each clouds as c}<option value={c}>{providerNames[c]}</option>{/each}
+              </select>
+            {/if}
+            <span class="small muted">{switching === acc.id ? 'Checking the new cloud…' : k.kind}</span>
+          </div>
           <div class="names">
             <label class="lbl editable">
               <span class="sr-only">Site name</span>
@@ -80,6 +152,10 @@
           <button class="ghost small" aria-label="Remove {acc.label}" title="Remove this {k.kind.toLowerCase()}" onclick={() => { if (confirm(`Remove ${acc.label || 'this site'} and everything in it?`)) removeAccount(acc.id); }}>✕</button>
         </div>
       </header>
+      {#if swapped?.accId === acc.id}
+        <div class="note small" role="status">{swapped.text} <button class="ghost small" aria-label="Dismiss" onclick={() => (swapped = null)}>✕</button></div>
+      {/if}
+      {#if !acc.folded}
       <div class="regions">
         {#each acc.regions as box (box.id)}
           {@const bt = boxTotals(box, prices)}
@@ -94,6 +170,9 @@
             ondrop={(e) => onDrop(e, box.id)}
           >
             <div class="boxhead">
+              <button class="fold ghost" aria-expanded={!box.folded} aria-label={box.folded ? 'Show this region' : 'Fold this region'} title={box.folded ? 'Show this region' : 'Fold this region'} onclick={() => (box.folded = !box.folded)}>
+                <span class="chev" class:open={!box.folded}>▸</span>
+              </button>
               {#if acc.provider === 'onprem'}
                 <span class="small muted">On-premises</span>
               {:else}
@@ -105,6 +184,9 @@
                 <button class="ghost small" aria-label="Remove region box" onclick={() => removeRegion(box.id)}>✕</button>
               {/if}
             </div>
+            {#if box.folded}
+              <div class="small muted folded">{[...walk(box.items)].length} items folded</div>
+            {:else}
             <div class="items">
               {#each box.items as item, i (item.id)}
                 <ItemCard {item} provider={acc.provider} boxId={box.id} index={i} />
@@ -120,9 +202,11 @@
                 {#if !box.items.length}<div class="drop small muted">or drag any service from the list</div>{/if}
               {/if}
             </div>
+            {/if}
           </div>
         {/each}
       </div>
+      {/if}
     </section>
   {/each}
 
@@ -180,6 +264,26 @@
   .add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--onprem); }
   .dot.aws { background: var(--aws); } .dot.gcp { background: var(--gcp); } .dot.oci { background: var(--oci); }
+  .fold { width: 22px; height: 22px; padding: 0; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; line-height: 1; background: var(--panel); }
+  .fold:hover { border-color: var(--accent); }
+  .fold:hover .chev { color: var(--accent); }
+  .chev { display: inline-block; transition: transform 0.12s; font-size: 13px; color: var(--text); }
+  .chev.open { transform: rotate(90deg); }
+  .folded { padding: 2px 6px; }
+  .box:has(.folded) { min-height: 0; }
+  .account:has(> header .chev:not(.open)) header { border-bottom: 0; padding-bottom: 0; }
+  select.cloud { font-weight: 700; font-size: 12px; padding: 2px 6px; border-radius: 999px; border: 1px solid var(--line); }
+  select.cloud.aws { color: var(--aws); border-color: var(--aws); }
+  select.cloud.gcp { color: var(--gcp); border-color: var(--gcp); }
+  select.cloud.oci { color: var(--oci); border-color: var(--oci); }
+  .note { margin-top: 8px; padding: 6px 10px; border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: 8px; display: flex; gap: 8px; align-items: center; }
+  .note button { margin-left: auto; }
+  .veil { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; z-index: 50; padding: 16px; }
+  .modal { background: var(--panel); border: 1px solid var(--danger); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; max-width: 440px; display: grid; gap: 10px; }
+  .modal h2 { margin: 0; font-size: 17px; color: var(--danger); }
+  .modal p, .modal ul { margin: 0; }
+  .modal ul { padding-left: 18px; display: grid; gap: 4px; }
+  .modal button { justify-self: end; }
   .bulk {
     display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
     padding: 8px 12px; margin-bottom: 10px;

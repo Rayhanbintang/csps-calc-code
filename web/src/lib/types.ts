@@ -19,6 +19,8 @@ export interface Account {
   /** Account ID, project ID, compartment or data-centre name. Optional, shown in exports. */
   ref?: string;
   regions: RegionBox[];
+  /** Folded on the canvas: only the header shows. */
+  folded?: boolean;
 }
 
 export interface RegionBox {
@@ -26,6 +28,11 @@ export interface RegionBox {
   region: string; // provider region code; "onprem" for the on-prem box
   label?: string;
   items: Item[];
+  folded?: boolean;
+  /** Set by a cloud switch: the region the box started in and the one the switch picked.
+   *  The next switch measures from `from`, so AWS Jakarta → OCI Batam → Google Cloud lands
+   *  in Jakarta, not in Singapore (closest to Batam). A region picked by hand resets it. */
+  swap?: { from: string; picked: string };
 }
 
 export type Spec = Record<string, string | number | boolean>;
