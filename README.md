@@ -3,7 +3,8 @@
 A cost calculator for AWS, Google Cloud and Oracle Cloud on one page.
 
 - Put sites side by side: a data centre on AWS Jakarta and a recovery site on Google Cloud Jakarta in one estimate.
-- Drag a workload to another region or another cloud and see the new price. A VM moved between clouds keeps its vCPU and memory and gets the nearest machine type, flagged for a check.
+- Build the estimate like the architecture: a VPC holds a Kubernetes cluster, the cluster holds node groups, each node group holds its disks. Counts multiply down the tree, so 3 nodes with 2 disks each price 6 disks.
+- Drag a workload, or a whole VPC with everything inside, to another region or another cloud and see the new price. Items moved between clouds keep their size and get the nearest type, flagged for a check.
 - Compare on-demand, Savings Plans, Reserved Instances and committed use in one matrix next to the spec.
 - Share the estimate by link, or export it to Excel (full detail, a sheet per region) and PDF (one-page summary).
 - Plain reminders catch common gaps: replication traffic between sites, VMs without disks, sites with no VPN or interconnect.
