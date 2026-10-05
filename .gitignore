@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.*
+!.env.example
+.vercel/
+
+# Generated price data (built by the daily Action, never committed)
+web/public/prices/
+etl/out/
+
+# Build output and dependencies
+node_modules/
+dist/
+web/build/
+.svelte-kit/
+*.exe
+*.test
+coverage.out
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
