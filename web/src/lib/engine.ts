@@ -133,6 +133,23 @@ export function estimateTotals(est: Estimate, prices: Map<string, Priced>): Tota
   return sumTotals(est.accounts.map((a) => accountTotals(a, prices)));
 }
 
+/** Prices every item of an estimate with the given price list (each item at its count
+ *  times its containers'). Used by the share page to show today's prices next to the saved ones. */
+export async function priceEstimate(est: Estimate, manifest: Manifest): Promise<Map<string, Priced>> {
+  const out = new Map<string, Priced>();
+  const jobs: Promise<void>[] = [];
+  for (const acc of est.accounts)
+    for (const box of acc.regions) {
+      const ctx = ctxFor(manifest, acc.provider, box.region);
+      for (const n of walk(box.items)) {
+        const { children: _c, ...flat } = n.item;
+        jobs.push(priceItem(ctx, { ...flat, qty: n.item.qty * n.mult }).then((p) => void out.set(n.item.id, p)));
+      }
+    }
+  await Promise.all(jobs);
+  return out;
+}
+
 let counter = 0;
 export function uid(prefix = 'i'): string {
   counter += 1;

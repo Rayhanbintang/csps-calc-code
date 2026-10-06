@@ -51,10 +51,20 @@ function km(a: [number, number], b: [number, number]): number {
   return 12742 * Math.asin(Math.sqrt(h));
 }
 
-/** The region of the new cloud closest to `code`. Falls back to the first listed region. */
-export function nearestRegion(code: string, candidates: string[]): string | undefined {
+/** Each cloud's default region: where a switch lands when the distance is unknown. */
+export const DEFAULT_REGION: Record<Provider, string> = {
+  aws: 'us-east-1',
+  gcp: 'us-central1',
+  oci: 'us-ashburn-1',
+  onprem: 'onprem',
+};
+
+/** The region of the new cloud closest to `code`. When either side has no known location,
+ *  the new cloud's default region (`fallback`, when listed), else the first listed region. */
+export function nearestRegion(code: string, candidates: string[], fallback?: string): string | undefined {
+  const dflt = fallback && candidates.includes(fallback) ? fallback : candidates[0];
   const from = AT[code];
-  if (!from) return candidates[0];
+  if (!from) return dflt;
   let best: string | undefined, dist = Infinity;
   for (const c of candidates) {
     const at = AT[c];
@@ -62,7 +72,7 @@ export function nearestRegion(code: string, candidates: string[]): string | unde
     const d = km(from, at);
     if (d < dist) [best, dist] = [c, d];
   }
-  return best ?? candidates[0];
+  return best ?? dflt;
 }
 
 /** Services in the site that the new cloud does not offer at all. */
@@ -107,7 +117,7 @@ export async function swapAccount(acc: Account, to: Provider, manifest: Manifest
   const regions = await Promise.all(
     acc.regions.map(async (box) => {
       const from_ = box.swap?.picked === box.region ? box.swap.from : box.region;
-      const region = codes.includes(from_) ? from_ : nearestRegion(from_, codes) ?? box.region;
+      const region = codes.includes(from_) ? from_ : nearestRegion(from_, codes, DEFAULT_REGION[to]) ?? box.region;
       moves.push([box.region, region]);
       const ctx = ctxFor(manifest, to, region);
       const items: Item[] = await Promise.all(box.items.map((i) => moveItem(i, from, to, ctx)));

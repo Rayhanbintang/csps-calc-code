@@ -14,7 +14,8 @@ func f(v float64) *float64 { return &v }
 
 // The nested example: VPC → cluster → "stateful" (3 VMs, 2 disks each) and "web"
 // (5 VMs, 1 disk each). Rows must indent by depth, show "6 × ... (2 each)"-style counts,
-// and carry no subtotal column.
+// and carry no subtotal column. The All items sheet stays a flat list that sums cleanly;
+// the region sheet adds a subtotal row after each container's last child.
 func TestNestedItems(t *testing.T) {
 	r := &report.Report{V: 1, Name: "Nested", Accounts: []report.Account{{
 		Provider: "aws", ProviderName: "AWS", Label: "DC",
@@ -53,8 +54,33 @@ func TestNestedItems(t *testing.T) {
 	for _, r := range rows {
 		for _, c := range r {
 			if strings.Contains(c, "With inside") || strings.Contains(c, "811.81") {
-				t.Errorf("subtotal leaked into the sheet: %q", c)
+				t.Errorf("subtotal leaked into the All items sheet: %q", c)
 			}
 		}
+	}
+
+	// Region sheet: the order of item and subtotal rows (line rows have no "└" and are skipped).
+	box, _ := wb.GetRows(wb.GetSheetList()[2])
+	var got []string
+	for _, r := range box[4:] {
+		if len(r) > 0 && (strings.Contains(r[0], "Subtotal") || r[0] == "VPC" || strings.Contains(r[0], "└")) {
+			got = append(got, strings.TrimSpace(r[0])+" | "+strings.TrimPrefix(r[len(r)-1], "$"))
+		}
+	}
+	wantRows := []string{
+		"VPC | 72.57",
+		"└ EKS | 73.00",
+		"└ 3 × stateful | 210.24",
+		"└ 3 × Data disk (1 each) | 28.80",
+		"└ 3 × Log disk (1 each) | 28.80",
+		"Subtotal, stateful | 267.84", // 210.24 + 28.80 + 28.80
+		"└ 5 × web | 350.40",
+		"└ 5 × Disk (1 each) | 48.00",
+		"Subtotal, web | 398.40", // 350.40 + 48.00
+		"Subtotal, EKS | 739.24", // 73 + 267.84 + 398.40
+		"Subtotal, VPC | 811.81", // 72.57 + 739.24
+	}
+	if g, w := strings.Join(got, "\n"), strings.Join(wantRows, "\n"); g != w {
+		t.Errorf("region sheet rows:\n%s\nwant:\n%s", g, w)
 	}
 }

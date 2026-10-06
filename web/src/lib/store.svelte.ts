@@ -198,6 +198,40 @@ export async function repriceAll(): Promise<void> {
   await Promise.all(jobs);
 }
 
+/** Prices the tabs that are not on screen, so the tab bar shows today's totals. Runs
+ *  after the price list loads; it writes only `Tab.monthly`, never the estimate on screen. */
+export async function repriceTabs(): Promise<void> {
+  const m = app.manifest;
+  if (!m) return;
+  for (const t of app.tabs) {
+    if (t.id === app.tab) continue;
+    const est = $state.snapshot(t.est) as Estimate;
+    let total = 0;
+    const jobs: Promise<void>[] = [];
+    for (const acc of est.accounts)
+      for (const box of acc.regions)
+        for (const node of walk(box.items)) {
+          const { children: _c, ...flat } = node.item;
+          const item = { ...flat, qty: node.item.qty * node.mult };
+          const key = keyOf(acc.provider, box.region, item);
+          const hit = memo.get(key);
+          if (hit) {
+            total += hit.monthly;
+            continue;
+          }
+          jobs.push(
+            priceItem(ctxFor(m, acc.provider, box.region), item).then((res) => {
+              if (!res.unavailable) memo.set(key, res);
+              total += res.monthly;
+            }),
+          );
+        }
+    await Promise.all(jobs);
+    const still = app.tabs.find((x) => x.id === t.id);
+    if (still && still.id !== app.tab) still.monthly = Math.round(total * 100) / 100;
+  }
+}
+
 /** Prices one item under another pricing model, for the comparison table. */
 export async function priceVariant(itemId: string, pricing: Item['pricing']): Promise<Priced | undefined> {
   const f = find(itemId);

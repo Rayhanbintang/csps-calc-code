@@ -13,6 +13,15 @@ describe('switching a site to another cloud', () => {
     expect(nearestRegion('us-east-1', ['us-ashburn-1', 'us-phoenix-1'])).toBe('us-ashburn-1');
   });
 
+  it('falls back to the new cloud default region when a location is unknown', () => {
+    // A region missing from the coordinates table: the default, not the first listed.
+    expect(nearestRegion('xx-new-1', ['af-south-1', 'us-east-1', 'eu-west-1'], 'us-east-1')).toBe('us-east-1');
+    // Known start, but none of the candidates has a location.
+    expect(nearestRegion('ap-southeast-3', ['zz-a-1', 'zz-b-1', 'zz-c-1'], 'zz-b-1')).toBe('zz-b-1');
+    // A default the cloud does not list: the first listed region.
+    expect(nearestRegion('xx-new-1', ['af-south-1', 'eu-west-1'], 'us-east-1')).toBe('af-south-1');
+  });
+
   it('a site of common services can switch', () => {
     const acc = site([item('v', 'vpc', [item('k', 'k8s', [item('n', 'vm', [item('d', 'disk')])])]), item('db', 'db')]);
     expect(swapBlockers(acc, 'gcp')).toEqual([]);

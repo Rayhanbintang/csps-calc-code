@@ -134,7 +134,7 @@ func wrappedLines(text string, w float64) float64 {
 }
 
 type styles struct {
-	title, sub, wrap, header, text, money, rate, qty, bold, boldMoney, total, totalMoney, warn int
+	title, sub, wrap, header, text, money, rate, qty, bold, boldMoney, total, totalMoney, warn, subtotal, subtotalMoney int
 }
 
 func makeStyles(f *excelize.File) (*styles, error) {
@@ -165,6 +165,9 @@ func makeStyles(f *excelize.File) (*styles, error) {
 	st.boldMoney = mk(&excelize.Style{Font: font(10, true, ""), CustomNumFmt: strPtr(moneyFmt), Alignment: topR, Border: border, Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F0F2F5"}}})
 	st.total = mk(&excelize.Style{Font: font(11, true, ""), Alignment: top})
 	st.totalMoney = mk(&excelize.Style{Font: font(11, true, ""), CustomNumFmt: strPtr(moneyFmt), Alignment: topR})
+	italic := &excelize.Font{Family: fontName, Size: 10, Bold: true, Italic: true, Color: "1F6FEB"}
+	st.subtotal = mk(&excelize.Style{Font: italic, Alignment: top, Border: border})
+	st.subtotalMoney = mk(&excelize.Style{Font: italic, CustomNumFmt: strPtr(moneyFmt), Alignment: topR, Border: border})
 	st.warn = mk(&excelize.Style{Font: font(10, false, "B42318"), Alignment: top, Border: border})
 	return st, firstErr
 }
@@ -305,7 +308,19 @@ func Build(r *report.Report) ([]byte, error) {
 			bs.add(cell{fmt.Sprintf("%s per month, %s upfront. Prices as of %s.", money(b.Monthly), money(b.Upfront), dateOnly(r.PricesAsOf)), st.sub})
 			bs.add()
 			bs.add(cell{"Item / line", st.header}, cell{"Type / SKU · pricing", st.header}, cell{"Quantity", st.header}, cell{"Unit", st.header}, cell{"Rate (USD)", st.header}, cell{"Per month (USD)", st.header})
+			// A container's subtotal row follows its last child. open holds the containers
+			// whose children are still being written, outermost first.
+			var open []report.Item
+			closeTo := func(depth int) {
+				for len(open) > 0 && open[len(open)-1].Depth >= depth {
+					c := open[len(open)-1]
+					open = open[:len(open)-1]
+					label := strings.Repeat("   ", c.Depth) + "Subtotal, " + c.Name
+					bs.add(cell{label, st.subtotal}, cell{"", st.subtotal}, cell{"", st.subtotal}, cell{"", st.subtotal}, cell{"", st.subtotal}, cell{*c.Subtotal, st.subtotalMoney})
+				}
+			}
 			for _, it := range b.Items {
+				closeTo(it.Depth)
 				pad := strings.Repeat("   ", it.Depth) + "      "
 				bs.add(cell{itemLabel(it), st.bold}, cell{strings.TrimSpace(it.SKU + "\n" + it.Pricing), st.bold}, cell{"", st.bold}, cell{"", st.bold}, cell{"", st.bold}, cell{it.Monthly, st.boldMoney})
 				for _, l := range it.Lines {
@@ -321,7 +336,11 @@ func Build(r *report.Report) ([]byte, error) {
 					}
 					bs.add(cell{pad + strings.ReplaceAll(n, "\n", "\n"+pad), style})
 				}
+				if it.Subtotal != nil {
+					open = append(open, it)
+				}
 			}
+			closeTo(0)
 			skip := map[int]bool{0: true, 1: true}
 			for i, row := range bs.rows {
 				if len(row) == 1 && i > 2 {

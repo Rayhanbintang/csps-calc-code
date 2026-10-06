@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { fly } from 'svelte/transition';
   import { view } from '../lib/board.svelte';
-  import { app, find, repriceAll, saveTabs } from '../lib/store.svelte';
+  import { app, find, repriceAll, repriceTabs, saveTabs } from '../lib/store.svelte';
   import Header from './Header.svelte';
   import Tabs from './Tabs.svelte';
   import Palette from './Palette.svelte';
@@ -27,6 +27,12 @@
       saveTabs();
       repriceAll();
     });
+  });
+
+  // Tabs not on screen keep the total from when they were last open; once today's price
+  // list is in, price them again in the background.
+  $effect(() => {
+    if (app.manifest) untrack(() => void repriceTabs());
   });
 
   // Sidebar width: dragged by the handle, remembered in this browser.
