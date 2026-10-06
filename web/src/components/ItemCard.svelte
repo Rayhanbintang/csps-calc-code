@@ -5,7 +5,7 @@
   import { service } from '../lib/catalog';
   import { money } from '../lib/report';
   import { QUICK, isContainer, subtotal } from '../lib/tree';
-  import { accepts, drag, endDrag, startItems } from '../lib/drag';
+  import { drag, press } from '../lib/drag.svelte';
 
   let {
     item,
@@ -38,62 +38,24 @@
   const effective = $derived(item.qty * mult);
   const quick = $derived(QUICK[item.svc] ?? []);
 
-  // Drop on the card itself = place before or after it (reorder or insert as a sibling).
-  let edge = $state<'before' | 'after' | null>(null);
-  // Drop on the inside area = put it inside this card.
-  let over = $state<'yes' | 'no' | null>(null);
+  // Where a drag would land, read from the drag engine: a bar before or after this card,
+  // or the inside area lit up (or refused).
+  const t = $derived(drag.active ? drag.target : null);
+  const edge = $derived(t?.kind === 'card' && t.itemId === item.id && t.ok ? t.edge : null);
+  const over = $derived(t?.kind === 'inside' && t.itemId === item.id ? (t.ok ? 'yes' : 'no') : null);
+  const moving = $derived(drag.active && !!drag.ids?.includes(item.id));
 
-  function dragStart(e: DragEvent) {
+  function onPress(e: PointerEvent) {
     e.stopPropagation();
-    startItems(e, ticked ? [...app.ticked] : [item.id]);
+    press(e, () => {
+      const ids = ticked ? [...app.ticked] : [item.id];
+      return { ids, label: ids.length > 1 ? `${ids.length} cards` : item.name || svc?.label || item.svc };
+    });
   }
 
   function tick(e: Event) {
     const on = (e.target as HTMLInputElement).checked;
     app.ticked = on ? [...app.ticked, item.id] : app.ticked.filter((t) => t !== item.id);
-  }
-
-  function onCardOver(e: DragEvent) {
-    e.stopPropagation();
-    if (drag.ids?.includes(item.id) || !accepts(parentId)) {
-      edge = null;
-      return;
-    }
-    e.preventDefault();
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    edge = e.clientY < r.top + r.height / 2 ? 'before' : 'after';
-  }
-
-  function onCardDrop(e: DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    const at = index + (edge === 'after' ? 1 : 0);
-    edge = null;
-    const svcId = e.dataTransfer?.getData('application/x-csps-svc');
-    if (svcId) addItem(boxId, svcId, undefined, parentId, at);
-    const ids = e.dataTransfer?.getData('application/x-csps-items');
-    if (ids) moveItems(JSON.parse(ids), { boxId, parentId }, at);
-    endDrag();
-  }
-
-  function onInsideOver(e: DragEvent) {
-    e.stopPropagation();
-    if (accepts(item.id)) {
-      e.preventDefault();
-      over = 'yes';
-    } else over = 'no';
-  }
-
-  function onInsideDrop(e: DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    over = null;
-    const svcId = e.dataTransfer?.getData('application/x-csps-svc');
-    if (svcId) addItem(boxId, svcId, undefined, item.id);
-    const ids = e.dataTransfer?.getData('application/x-csps-items');
-    if (ids) moveItems(JSON.parse(ids), { boxId, parentId: item.id });
-    if (item.folded) item.folded = false;
-    endDrag();
   }
 </script>
 
@@ -105,12 +67,13 @@
     class:check={!!item.check}
     class:before={edge === 'before'}
     class:after={edge === 'after'}
-    draggable="true"
-    ondragstart={dragStart}
-    ondragend={endDrag}
-    ondragover={onCardOver}
-    ondragleave={() => (edge = null)}
-    ondrop={onCardDrop}
+    class:moving
+    data-drop="card"
+    data-box={boxId}
+    data-item={item.id}
+    data-parent={parentId ?? ''}
+    data-index={index}
+    onpointerdown={onPress}
     role="button"
     tabindex="0"
     aria-label="{item.name || svc?.label}, {p ? money(p.monthly) : 'pricing'} a month"
@@ -152,23 +115,22 @@
       class:nope={over === 'no'}
       role="group"
       aria-label="Inside {item.name || svc?.label}"
-      ondragover={onInsideOver}
-      ondragleave={(e) => { e.stopPropagation(); over = null; }}
-      ondrop={onInsideDrop}
+      data-drop="inside"
+      data-box={boxId}
+      data-item={item.id}
     >
       {#each kids as child, i (child.id)}
         <ItemCard item={child} {provider} {boxId} mult={effective} parentId={item.id} index={i} depth={depth + 1} />
       {/each}
+      <div class="quick" class:hidden={over !== null}>
+        {#each quick as [childSvc, label]}
+          <button class="add small" onclick={(e) => { e.stopPropagation(); addItem(boxId, childSvc, undefined, item.id, undefined, childSvc === 'vm' && item.svc === 'k8s' ? label : undefined); }}>+ {label}</button>
+        {/each}
+      </div>
       {#if over === 'no'}
         <div class="hint small nope-text">{svc?.label} cannot hold that.</div>
       {:else if over === 'yes'}
         <div class="hint small muted">Drop to put it inside</div>
-      {:else}
-        <div class="quick">
-          {#each quick as [childSvc, label]}
-            <button class="add small" onclick={(e) => { e.stopPropagation(); addItem(boxId, childSvc, undefined, item.id, undefined, childSvc === 'vm' && item.svc === 'k8s' ? label : undefined); }}>+ {label}</button>
-          {/each}
-        </div>
       {/if}
     </div>
   {/if}
@@ -188,7 +150,11 @@
     border-radius: 8px;
     padding: 7px 9px;
     cursor: grab;
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    user-select: none;
   }
+  .card.moving { opacity: 0.45; }
   /* A container's header carries a wash of its colour so it reads as a header. */
   .container > .card {
     border-bottom-left-radius: 0;
@@ -252,7 +218,10 @@
   .odd > .inside { background: var(--panel-2); }
   .inside.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
   .inside.nope { border-color: var(--danger); }
-  .hint { text-align: center; padding: 4px; }
+  .inside { position: relative; }
+  /* The hint lies over the quick-add row, so the area keeps its height during a drag. */
+  .hint { position: absolute; left: 12px; right: 8px; bottom: 8px; text-align: center; padding: 4px; background: inherit; }
+  .quick.hidden { visibility: hidden; }
   .nope-text { color: var(--danger); }
   .quick { display: flex; flex-wrap: wrap; gap: 5px; }
   .add {

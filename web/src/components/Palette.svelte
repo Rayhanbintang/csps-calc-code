@@ -1,7 +1,7 @@
 <script lang="ts">
   import { services } from '../lib/catalog';
   import { app, addItem, find } from '../lib/store.svelte';
-  import { endDrag, startService } from '../lib/drag';
+  import { press } from '../lib/drag.svelte';
   import { canHold } from '../lib/tree';
 
   const groups = ['Compute', 'Storage', 'Database', 'Networking', 'Security', 'Integration', 'Operations', 'Other'] as const;
@@ -63,7 +63,7 @@
           <ul>
             {#each list as s (s.id)}
               <li>
-                <button class="svc" draggable="true" ondragstart={(e) => startService(e, s.id)} ondragend={endDrag} onclick={() => add(s.id)} title={s.blurb}>
+                <button class="svc" data-drag-handle onpointerdown={(e) => press(e, () => ({ svc: s.id, label: s.label }))} onclick={() => add(s.id)} title={s.blurb}>
                   <span class="label">{s.label}</span>
                   <span class="blurb">{s.blurb}</span>
                 </button>
@@ -116,6 +116,8 @@
     padding: 6px 9px;
     background: var(--panel);
     cursor: grab;
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
   }
   .label { font-weight: 600; }
   .blurb { font-size: 11px; color: var(--muted); }

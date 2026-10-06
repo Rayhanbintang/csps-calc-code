@@ -143,3 +143,6 @@ label { display: block; }
 .tag.oci { background: var(--oci); }
 .tag.onprem { background: var(--onprem); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* While a card or a service is dragged: no text selection, a grabbing cursor everywhere. */
+html.dragging-item, html.dragging-item * { cursor: grabbing !important; user-select: none; }

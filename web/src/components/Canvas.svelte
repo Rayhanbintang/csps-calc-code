@@ -6,27 +6,12 @@
   import { money } from '../lib/report';
   import ItemCard from './ItemCard.svelte';
   import RegionSelect from './RegionSelect.svelte';
-  import { endDrag } from '../lib/drag';
+  import { drag } from '../lib/drag.svelte';
   import { blockerMessage, swapAccount, swapBlockers } from '../lib/swap';
   import type { Account } from '../lib/types';
 
-  let over = $state<string | null>(null);
-
-  function onDrop(e: DragEvent, boxId: string) {
-    e.preventDefault();
-    over = null;
-    endDrag();
-    const svc = e.dataTransfer?.getData('application/x-csps-svc');
-    if (svc) return addItem(boxId, svc);
-    const ids = e.dataTransfer?.getData('application/x-csps-items');
-    if (ids) moveItems(JSON.parse(ids), boxId);
-  }
-
-  function onOver(e: DragEvent, boxId: string) {
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-csps-svc') ? 'copy' : 'move';
-    over = boxId;
-  }
+  /** The box a drag hovers over (only drops on the box itself, not on a card in it). */
+  const over = $derived(drag.active && drag.target?.kind === 'box' && drag.target.ok ? drag.target.boxId : null);
 
   const boxes = $derived(
     app.est.accounts.flatMap((a) => a.regions.map((r) => ({ id: r.id, label: `${a.label || providerNames[a.provider]} · ${r.label || r.region}` }))),
@@ -165,9 +150,8 @@
             class:over={over === box.id}
             role="group"
             aria-label="Region box {box.label || box.region}"
-            ondragover={(e) => onOver(e, box.id)}
-            ondragleave={() => (over = over === box.id ? null : over)}
-            ondrop={(e) => onDrop(e, box.id)}
+            data-drop="box"
+            data-box={box.id}
           >
             <div class="boxhead">
               <button class="fold ghost" aria-expanded={!box.folded} aria-label={box.folded ? 'Show this region' : 'Fold this region'} title={box.folded ? 'Show this region' : 'Fold this region'} onclick={() => (box.folded = !box.folded)}>
