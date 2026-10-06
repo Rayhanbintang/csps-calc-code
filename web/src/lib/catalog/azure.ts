@@ -109,7 +109,7 @@ async function azVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
   // The Windows licence is the difference between the Windows and the Linux rate.
   const licence = windows && !byol ? size.windows!.r - size.linux.r : 0;
   if (windows && byol) notes.push('Azure Hybrid Benefit: your own Windows licence, so the Linux rate applies.');
-  if (os !== 'linux' && os !== 'windows') notes.push('Azure lists this OS licence separately; add it as a custom line.');
+  if (os !== 'linux' && os !== 'windows') notes.push('Azure bills this OS licence on its own meter; add it as a custom line.');
   // SQL Server licences are sold per VM size: one price up to 4 vCPU, then per vCPU.
   let sqlRate = 0, sqlName = '';
   if (sw !== 'none' && !byol) {

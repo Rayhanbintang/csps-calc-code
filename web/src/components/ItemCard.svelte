@@ -109,7 +109,7 @@
       {#if ft && ftOpen}
         <div class="ftbox small" role="note">
           <strong>Free tier.</strong> {ft.text}
-          <span class="ftin {ft.inPrice}">{ft.inPrice === 'yes' ? 'Already in this price.' : ft.inPrice === 'no' ? 'Not taken off this price.' : 'Partly in this price.'}</span>
+          <span class="ftin {ft.inPrice}">{ft.inPrice === 'yes' ? 'Already in this price.' : ft.inPrice === 'no' ? 'This price leaves it out.' : 'Some of it is in this price.'}</span>
           {#if ft.detail}{ft.detail}{/if}
           {#if NEW_ACCOUNT[provider]}<div class="muted">{NEW_ACCOUNT[provider]!.text}</div>{/if}
           <a href={ft.src} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>Source</a>

@@ -122,6 +122,6 @@ export function freeTier(svc: string, provider: Provider): FreeTier | undefined 
 export function freeTierText(svc: string, provider: Provider): string {
   const t = freeTier(svc, provider);
   if (!t) return '';
-  const inPrice = t.inPrice === 'yes' ? 'Already in this price.' : t.inPrice === 'no' ? 'Not taken off this price.' : t.detail ?? '';
+  const inPrice = t.inPrice === 'yes' ? 'Already in this price.' : t.inPrice === 'no' ? 'This price leaves it out.' : t.detail ?? '';
   return `Free tier: ${t.text} ${t.inPrice === 'no' && t.detail ? `${t.detail} ` : ''}${inPrice}`.trim();
 }
