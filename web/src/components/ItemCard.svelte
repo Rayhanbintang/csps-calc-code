@@ -7,6 +7,7 @@
   import { QUICK, isContainer, subtotal } from '../lib/tree';
   import { drag, press } from '../lib/drag.svelte';
   import { zonesOf } from '../lib/zones';
+  import { iconUrl } from '../lib/icons';
   import { freeTier, freeTierText, NEW_ACCOUNT } from '../lib/freetier';
 
   let {
@@ -40,6 +41,7 @@
   const effective = $derived(item.qty * mult);
   const quick = $derived(QUICK[item.svc] ?? []);
   const zones = $derived(zonesOf(item, provider));
+  const icon = $derived(iconUrl(provider, item.svc));
   const ft = $derived(freeTier(item.svc, provider));
   let ftOpen = $state(false);
 
@@ -94,6 +96,7 @@
             <span class="chev" class:open={!item.folded}>▸</span>
           </button>
         {/if}
+        {#if icon}<img class="ico" src={icon} alt="" width="20" height="20" />{/if}
         <span class="ktag">{kind[0]}</span>
         {#if zones}<span class="az {zones.kind}" title={zones.title}>{zones.label}</span>{/if}
         {#if item.qty > 1}<span class="qty">{item.qty}×</span>{/if}
@@ -223,6 +226,7 @@
   .err { color: var(--danger); }
   .flag { color: var(--text); margin-top: 3px; }
   .cost { font-weight: 700; }
+  .ico { width: 20px; height: 20px; flex: none; border-radius: 4px; }
   .az {
     font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 999px; line-height: 16px;
     border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
