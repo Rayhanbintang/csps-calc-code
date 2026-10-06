@@ -20,15 +20,19 @@ const AWS_FREE = 'https://aws.amazon.com/free/';
 const GCP_FREE = 'https://docs.cloud.google.com/free/docs/free-cloud-features';
 const OCI_FREE = 'https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm';
 const OCI_LIST = 'https://www.oracle.com/cloud/price-list/';
+const AZ_ACCOUNT = 'https://azure.microsoft.com/en-us/pricing/purchase-options/azure-account';
+const AZ_LIST = 'https://prices.azure.com/api/retail/prices';
 
 /** Account-wide offers for new customers, shown under every service's allowance. */
 export const NEW_ACCOUNT: Partial<Record<Provider, { text: string; src: string }>> = {
   aws: { text: 'New AWS accounts (since 15 Jul 2025) get $100 in credits, up to $100 more, and a free plan for up to 6 months.', src: AWS_FREE },
   gcp: { text: 'New Google Cloud customers get $300 in credits for 90 days.', src: GCP_FREE },
+  azure: { text: 'New Azure customers get $200 in credits for 30 days and 12 months of free amounts on 20+ services.', src: AZ_ACCOUNT },
 };
 
 const TIERS: Record<string, Partial<Record<Provider, FreeTier>>> = {
   vm: {
+    azure: { text: '12 months for new customers: 750 hours each of B1s, B2pts v2 (Arm) and B2ats v2 (AMD) a month.', inPrice: 'no', src: AZ_ACCOUNT },
     gcp: { text: 'One e2-micro VM a month in us-west1, us-central1 or us-east1.', inPrice: 'no', src: GCP_FREE },
     oci: {
       text: 'Two AMD micro VMs (1/8 OCPU, 1 GB). Ampere A1: 1,500 OCPU-hours and 9,000 GB-hours a month, about 2 OCPU and 12 GB.',
@@ -50,6 +54,7 @@ const TIERS: Record<string, Partial<Record<Provider, FreeTier>>> = {
     },
   },
   functions: {
+    azure: { text: '1M executions and 400,000 GB-seconds a month (Consumption plan).', inPrice: 'yes', src: AZ_LIST },
     aws: { text: '1M requests and 400,000 GB-seconds a month, x86 and Arm.', inPrice: 'no', src: 'https://aws.amazon.com/lambda/pricing/' },
     gcp: {
       text: '2M invocations, 400,000 GB-seconds, 200,000 GHz-seconds and 5 GB of egress a month.',
@@ -64,23 +69,28 @@ const TIERS: Record<string, Partial<Record<Provider, FreeTier>>> = {
     },
   },
   k8s: {
+    azure: { text: 'The AKS Free tier has no cluster fee.', inPrice: 'no', detail: 'The card prices the Standard tier, which carries an uptime SLA.', src: AZ_LIST },
     gcp: { text: 'The cluster fee of one zonal Standard or Autopilot cluster a month. Nodes are charged.', inPrice: 'no', src: GCP_FREE },
   },
   queue: {
+    azure: { text: 'Service Bus Standard includes 13M operations a month.', inPrice: 'yes', src: AZ_LIST },
     aws: { text: '1M requests a month.', inPrice: 'no', src: 'https://aws.amazon.com/sqs/pricing/' },
     gcp: { text: '10 GiB of Pub/Sub messages a month.', inPrice: 'yes', src: GCP_FREE },
     oci: { text: '1M requests a month.', inPrice: 'yes', src: OCI_LIST },
   },
   notify: {
+    azure: { text: '100,000 Event Grid operations a month.', inPrice: 'yes', src: AZ_LIST },
     gcp: { text: '10 GiB of Pub/Sub messages a month.', inPrice: 'yes', src: GCP_FREE },
     oci: { text: '1M HTTPS and 1,000 email deliveries a month.', inPrice: 'yes', src: OCI_FREE },
   },
   monitoring: {
+    azure: { text: '5 GB of log ingestion a month and 10 metric alert time series.', inPrice: 'yes', src: AZ_LIST },
     aws: { text: '10 custom metrics, 10 alarms, 5 GB of logs, 3 dashboards and 1M API requests a month.', inPrice: 'no', src: 'https://aws.amazon.com/cloudwatch/pricing/' },
     gcp: { text: '150 MiB of metrics per billing account and 50 GiB of logs per project a month.', inPrice: 'yes', src: GCP_FREE },
     oci: { text: '500M ingestion and 1B retrieval data points; 10 GB of logs a month.', inPrice: 'yes', src: OCI_FREE },
   },
   egress: {
+    azure: { text: '100 GB a month to the internet.', inPrice: 'yes', src: AZ_LIST },
     aws: { text: '100 GB a month to the internet, shared across all services and regions.', inPrice: 'no', src: 'https://aws.amazon.com/ec2/pricing/on-demand/' },
     gcp: {
       text: '1 GB a month from North America.',
@@ -92,12 +102,14 @@ const TIERS: Record<string, Partial<Record<Provider, FreeTier>>> = {
     oci: { text: 'One flexible load balancer at 10 Mbps.', inPrice: 'yes', src: OCI_FREE },
   },
   db: {
+    azure: { text: 'Azure SQL Database: 100,000 vCore-seconds of serverless use and 32 GB of storage a month.', inPrice: 'no', detail: 'The card prices provisioned General Purpose compute.', src: AZ_ACCOUNT },
     oci: { text: 'Two Autonomous Databases (1 OCPU, 20 GB each) and one single-node MySQL HeatWave with 50 GB.', inPrice: 'no', src: OCI_FREE },
   },
   waf: {
     oci: { text: 'The first WAF policy and 10M requests a month.', inPrice: 'yes', src: OCI_LIST },
   },
   apigw: {
+    azure: { text: '1M calls a month on the Consumption tier.', inPrice: 'yes', src: AZ_LIST },
     gcp: { text: 'The first 2M API calls a month.', inPrice: 'yes', src: 'https://cloud.google.com/api-gateway/pricing' },
   },
 };

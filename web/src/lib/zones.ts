@@ -15,6 +15,7 @@ const TERM: Record<Provider, string> = {
   aws: 'Availability Zone',
   gcp: 'zone',
   oci: 'availability domain (fault domain in one-domain regions)',
+  azure: 'availability zone',
   onprem: 'zone',
 };
 

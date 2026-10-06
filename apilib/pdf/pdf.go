@@ -28,7 +28,7 @@ var (
 	rule   = rgb{223, 227, 232}
 	band   = rgb{240, 242, 245}
 	accent = rgb{31, 111, 235}
-	clouds = map[string]rgb{"aws": {217, 119, 6}, "gcp": {37, 99, 235}, "oci": {185, 28, 28}, "onprem": {71, 85, 105}}
+	clouds = map[string]rgb{"aws": {217, 119, 6}, "gcp": {37, 99, 235}, "oci": {185, 28, 28}, "azure": {3, 105, 161}, "onprem": {71, 85, 105}}
 )
 
 type doc struct {

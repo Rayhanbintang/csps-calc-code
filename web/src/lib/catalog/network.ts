@@ -39,7 +39,7 @@ export const vpc: Service = {
 };
 
 /** Prices the parts of a VPC that cost money by reusing the NAT, endpoint and IP pricers. */
-async function vpcPrice(ctx: Ctx, item: Item, freeNote: string): Promise<Priced> {
+export async function vpcPrice(ctx: Ctx, item: Item, freeNote: string): Promise<Priced> {
   const s = item.spec;
   // Data fields on the VPC card are totals for the VPC. The NAT and endpoint pricers bill
   // data per gateway / endpoint, so the total is split across them.
@@ -263,7 +263,7 @@ export const endpoint: Service = {
 // Data transfer out
 // =====================================================================================
 
-function destField(ctx: Ctx): Field[] {
+export function destField(ctx: Ctx): Field[] {
   return [{
     key: 'to', label: 'Destination', type: 'select',
     options: [{ value: 'internet', label: 'Internet' }, ...ctx.regions.filter((r) => r.code !== ctx.region).map((r) => ({ value: r.code, label: `${r.name} (${r.code})` }))],

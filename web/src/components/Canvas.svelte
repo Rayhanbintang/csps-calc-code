@@ -48,8 +48,8 @@
   );
   let moveTo = $state('');
 
-  const providers: Provider[] = ['aws', 'gcp', 'oci', 'onprem'];
-  const clouds: Provider[] = ['aws', 'gcp', 'oci'];
+  const providers: Provider[] = ['aws', 'gcp', 'oci', 'azure', 'onprem'];
+  const clouds: Provider[] = ['aws', 'gcp', 'oci', 'azure'];
 
   /** Shown in the middle of the screen when a site cannot switch cloud. */
   let blocked = $state<{ text: string; list: { name: string; reason: string }[] } | null>(null);
@@ -292,6 +292,7 @@
   .account.aws { border-left-color: var(--aws); }
   .account.gcp { border-left-color: var(--gcp); }
   .account.oci { border-left-color: var(--oci); }
+  .account.azure { border-left-color: var(--azure); }
   header { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
   .ident { display: grid; gap: 6px; flex: 1 1 280px; min-width: 0; }
   .kind { display: flex; gap: 8px; align-items: center; }
@@ -324,7 +325,7 @@
   .addq:hover { color: var(--accent); border-color: var(--accent); border-style: solid; }
   .add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--onprem); }
-  .dot.aws { background: var(--aws); } .dot.gcp { background: var(--gcp); } .dot.oci { background: var(--oci); }
+  .dot.aws { background: var(--aws); } .dot.gcp { background: var(--gcp); } .dot.oci { background: var(--oci); } .dot.azure { background: var(--azure); }
   .fold { width: 22px; height: 22px; padding: 0; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; line-height: 1; background: var(--panel); }
   .fold:hover { border-color: var(--accent); }
   .fold:hover .chev { color: var(--accent); }
@@ -337,6 +338,7 @@
   select.cloud.aws { color: var(--aws); border-color: var(--aws); }
   select.cloud.gcp { color: var(--gcp); border-color: var(--gcp); }
   select.cloud.oci { color: var(--oci); border-color: var(--oci); }
+  select.cloud.azure { color: var(--azure); border-color: var(--azure); }
   .note { margin-top: 8px; padding: 6px 10px; border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: 8px; display: flex; gap: 8px; align-items: center; }
   .note button { margin-left: auto; }
   .veil { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; z-index: 50; padding: 16px; }

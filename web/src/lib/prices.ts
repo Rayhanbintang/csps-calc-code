@@ -90,6 +90,18 @@ export const gcp = {
   global: () => getGz<GcpRow[]>(`gcp/global.json`),
 };
 
+/** One Azure retail meter (see etl/internal/azure). Reservation prices cover the whole
+ *  term; tiered meters repeat with a higher `f` (the unit count the price starts at). */
+export interface AzRow {
+  s: string; p: string; k: string; a?: string; m: string; u: string;
+  t: 'c' | 'r'; y?: number; r: number; f?: number; z?: string; sp?: [number, number][];
+}
+
+export const azure = {
+  region: (region: string) => getGz<AzRow[]>(`azure/${region}.json`),
+  global: () => getGz<AzRow[]>(`azure/global.json`),
+};
+
 export const oci = {
   all: () => getGz<OciRow[]>(`oci/prices.json`),
 };

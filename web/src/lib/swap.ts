@@ -42,6 +42,18 @@ const AT: Record<string, [number, number]> = {
   'mx-queretaro-1': [20.6, -100.4], 'sa-bogota-1': [4.7, -74.1], 'sa-santiago-1': [-33.4, -70.6], 'sa-saopaulo-1': [-23.5, -46.6],
   'sa-valparaiso-1': [-33.0, -71.6], 'sa-vinhedo-1': [-23.0, -46.98], 'uk-cardiff-1': [51.5, -3.2], 'uk-london-1': [51.5, -0.1],
   'us-ashburn-1': [39.0, -77.5], 'us-chicago-1': [41.9, -87.6], 'us-phoenix-1': [33.4, -112.1], 'us-sanjose-1': [37.3, -121.9],
+  // Microsoft Azure
+  australiacentral: [-35.3, 149.1], australiaeast: [-33.9, 151.2], australiasoutheast: [-37.8, 145.0], brazilsouth: [-23.5, -46.6],
+  canadacentral: [43.7, -79.4], canadaeast: [46.8, -71.2], centralindia: [18.5, 73.9], centralus: [41.6, -93.6],
+  eastasia: [22.3, 114.2], eastus: [37.4, -79.4], eastus2: [36.7, -78.4], francecentral: [48.9, 2.4],
+  germanywestcentral: [50.1, 8.7], indonesiacentral: [-6.2, 106.8], israelcentral: [32.1, 34.8], italynorth: [45.5, 9.2],
+  japaneast: [35.7, 139.7], japanwest: [34.7, 135.5], koreacentral: [37.6, 127.0], koreasouth: [35.2, 129.1],
+  malaysiawest: [3.1, 101.7], mexicocentral: [20.6, -100.4], newzealandnorth: [-36.8, 174.8], northcentralus: [41.9, -87.6],
+  northeurope: [53.3, -6.3], norwayeast: [59.9, 10.8], polandcentral: [52.2, 21.0], qatarcentral: [25.3, 51.5],
+  southafricanorth: [-26.2, 28.0], southcentralus: [29.4, -98.5], southeastasia: [1.35, 103.8], southindia: [13.1, 80.3],
+  spaincentral: [40.4, -3.7], swedencentral: [60.7, 17.1], switzerlandnorth: [47.4, 8.5], uaenorth: [25.3, 55.3],
+  uksouth: [51.5, -0.1], ukwest: [51.5, -3.2], westcentralus: [41.6, -104.8], westeurope: [52.4, 4.9],
+  westindia: [19.1, 72.9], westus: [37.8, -122.4], westus2: [47.2, -119.9], westus3: [33.4, -112.1],
 };
 
 function km(a: [number, number], b: [number, number]): number {
@@ -56,6 +68,7 @@ export const DEFAULT_REGION: Record<Provider, string> = {
   aws: 'us-east-1',
   gcp: 'us-central1',
   oci: 'us-ashburn-1',
+  azure: 'eastus',
   onprem: 'onprem',
 };
 

@@ -171,3 +171,65 @@ describe.skipIf(!have)('v2 pricing: B3 to B7', () => {
     near(out!.monthly, 48.4);
   });
 });
+
+// Microsoft Azure, Indonesia Central. Rates read from the Azure Retail Prices API on 2026-10-06.
+describe.skipIf(!have)('Azure', () => {
+  const r = 'indonesiacentral';
+  const d2 = { 'azure.size': 'Standard_D2s_v5' };
+
+  it('D2s_v5 Linux pay as you go: 730 h × $0.108 = $78.84', async () => {
+    const p = await price('azure', r, item('vm', d2));
+    expect(p.unavailable).toBeUndefined();
+    near(p.monthly, 78.84);
+  });
+
+  it('D2s_v5 Windows adds the licence: 730 × ($0.20 − $0.108) = $67.16, total $146.00', async () => {
+    const p = await price('azure', r, item('vm', { ...d2, os: 'windows' }));
+    near(p.monthly, 146);
+  });
+
+  it('D2s_v5 1-year reservation, paid monthly: $584 ÷ 8,760 h × 730 h = $48.67', async () => {
+    const p = await price('azure', r, item('vm', d2, { model: 'ri', term: 1, pay: 'no' }));
+    near(p.monthly, (584 / 8760) * 730);
+  });
+
+  it('D2s_v5 1-year reservation, paid up front: $584 once, nothing monthly', async () => {
+    const p = await price('azure', r, item('vm', d2, { model: 'ri', term: 1, pay: 'all' }));
+    near(p.upfront, 584);
+    near(p.monthly, 0);
+  });
+
+  it('D2s_v5 1-year Savings Plan: 730 h × $0.07452 = $54.40', async () => {
+    const p = await price('azure', r, item('vm', d2, { model: 'sp', term: 1, pay: 'no' }));
+    near(p.monthly, 730 * 0.07452);
+  });
+
+  it('a 100 GB Premium SSD is billed as a P10 (128 GiB): $19.71', async () => {
+    const p = await price('azure', r, item('disk', { gb: 100, type: 'ssd' }));
+    near(p.monthly, 19.71);
+  });
+
+  it('MySQL Flexible Server 2 vCore, HA doubles compute and storage', async () => {
+    // (2 vCore × 730 h × $0.10575 + 100 GB × $0.1242) × 2 = (154.40 + 12.42) × 2 = $333.63
+    const p = await price('azure', r, item('db', { engine: 'mysql', vcpu: 2, mem: 8, gb: 100, ha: 'multi' }));
+    near(p.monthly, (2 * 730 * 0.10575 + 100 * 0.1242) * 2);
+  });
+
+  it('internet egress: the first 100 GB are free, then $0.12: 1,000 GB = $108.00', async () => {
+    const p = await price('azure', r, item('egress', { gb: 1000, to: 'internet' }));
+    near(p.monthly, 108);
+  });
+
+  it('Service Bus Standard here lists the base charge per hour: 730 × $0.013441 = $9.81', async () => {
+    const p = await price('azure', r, item('queue', { requests: 10_000_000 })); // within the 13M included
+    near(p.monthly, 730 * 0.013441);
+  });
+});
+
+describe.skipIf(!have)('Azure SQL Server on VMs', () => {
+  it('D2s_v5 Windows + SQL Standard: 4-core minimum licence at $0.40 an hour', async () => {
+    // compute 730 × 0.108 = 78.84; Windows 730 × 0.092 = 67.16; SQL Std 730 × 0.40 = 292.00. Total $438.00
+    const p = await price('azure', 'indonesiacentral', item('vm', { 'azure.size': 'Standard_D2s_v5', os: 'windows', sw: 'sql-std' }));
+    near(p.monthly, 438);
+  });
+});

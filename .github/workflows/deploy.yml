@@ -1,6 +1,6 @@
 # Builds and deploys csps-calc to Vercel.
 #
-# - Every day: fetch fresh prices from AWS, Google Cloud and Oracle, test, deploy.
+# - Every day: fetch fresh prices from AWS, Google Cloud, Oracle and Azure, test, deploy.
 # - Push to main: reuse the prices already live (mirror) and deploy the new code.
 #   If nothing is live yet, it fetches.
 # - Manual run: choose a full fetch or a mirror.
@@ -70,7 +70,7 @@ jobs:
             echo "Mirrored the live prices."
           else
             rm -rf "$out"
-            go run ./cmd/fetch -out "$out" -providers aws,gcp,oci -parallel 6 -fallback "$SITE"
+            go run ./cmd/fetch -out "$out" -providers aws,gcp,oci,azure -parallel 6 -fallback "$SITE"
           fi
           du -sh "$out"
           find "$out" -type f | wc -l

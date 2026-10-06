@@ -1,7 +1,7 @@
 // The estimate model. The canvas edits it, the share link stores it, and later the AWS
 // importer and the chat input only have to produce it.
 
-export type Provider = 'aws' | 'gcp' | 'oci' | 'onprem';
+export type Provider = 'aws' | 'gcp' | 'oci' | 'azure' | 'onprem';
 
 export const HOURS_PER_MONTH = 730;
 

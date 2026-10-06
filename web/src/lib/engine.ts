@@ -11,6 +11,7 @@ export const providerNames: Record<Provider, string> = {
   aws: 'AWS',
   gcp: 'Google Cloud',
   oci: 'Oracle Cloud',
+  azure: 'Microsoft Azure',
   onprem: 'On-premises',
 };
 
@@ -19,6 +20,7 @@ export const accountKinds: Record<Provider, { kind: string; ref: string }> = {
   aws: { kind: 'AWS account', ref: 'Account ID' },
   gcp: { kind: 'Google Cloud project', ref: 'Project ID' },
   oci: { kind: 'OCI compartment', ref: 'Compartment' },
+  azure: { kind: 'Azure subscription', ref: 'Subscription ID' },
   onprem: { kind: 'Data centre', ref: 'Location' },
 };
 

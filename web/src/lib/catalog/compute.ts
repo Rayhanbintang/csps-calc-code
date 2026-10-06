@@ -70,7 +70,7 @@ function gcpFnCpu(mb: number): number {
   return 8;
 }
 
-function fnUsage(item: Item) {
+export function fnUsage(item: Item) {
   const req = num(item.spec, 'requests', 1_000_000) * item.qty;
   const ms = num(item.spec, 'ms', 200);
   const mb = num(item.spec, 'mb', 512);
@@ -167,7 +167,7 @@ export const functions: Service = {
 // Serverless containers
 // =====================================================================================
 
-function ctUsage(item: Item) {
+export function ctUsage(item: Item) {
   const tasks = num(item.spec, 'tasks', 2) * item.qty;
   const hrs = Math.min(H, num(item.spec, 'hours', H));
   return { tasks, hrs, vcpu: num(item.spec, 'vcpu', 1), gb: num(item.spec, 'gb', 2) };

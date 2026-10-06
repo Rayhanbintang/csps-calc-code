@@ -270,7 +270,7 @@ export const notify: Service = {
 // =====================================================================================
 
 /** One time series written every minute is 43,800 points a month. */
-const POINTS = 43_800;
+export const POINTS = 43_800;
 
 export const monitoring: Service = {
   id: 'monitoring',
@@ -341,7 +341,7 @@ export const monitoring: Service = {
 // Custom line (on-prem, licences, support, anything not in the catalog)
 // =====================================================================================
 
-async function customPrice(_ctx: Ctx, item: Item): Promise<Priced> {
+export async function customPrice(_ctx: Ctx, item: Item): Promise<Priced> {
   const monthly = num(item.spec, 'monthly', 0);
   const upfront = num(item.spec, 'upfront', 0);
   const lines: Line[] = [line(str(item.spec, 'what', 'Custom line'), item.qty, str(item.spec, 'unit', 'units'), monthly)];

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/Rayhanbintang/csps-calc-code/etl/internal/aws"
+	"github.com/Rayhanbintang/csps-calc-code/etl/internal/azure"
 	"github.com/Rayhanbintang/csps-calc-code/etl/internal/gcp"
 	"github.com/Rayhanbintang/csps-calc-code/etl/internal/oci"
 )
@@ -51,7 +52,7 @@ type RegionEntry struct {
 
 func main() {
 	out := flag.String("out", "out/prices", "output folder")
-	providers := flag.String("providers", "aws,gcp,oci", "providers to fetch")
+	providers := flag.String("providers", "aws,gcp,oci,azure", "providers to fetch")
 	regions := flag.String("regions", "", "comma-separated AWS regions (default: all)")
 	parallel := flag.Int("parallel", 4, "AWS regions fetched at once")
 	fallback := flag.String("fallback", "", "base URL of the live site, used when a fetch fails")
@@ -80,6 +81,8 @@ func main() {
 			err = fetchSimple(ctx, *out, "gcp", now, *fallback, prev, m, gcp.Fetch)
 		case "oci":
 			err = fetchSimple(ctx, *out, "oci", now, *fallback, prev, m, oci.Fetch)
+		case "azure":
+			err = fetchSimple(ctx, *out, "azure", now, *fallback, prev, m, azure.Fetch)
 		default:
 			err = fmt.Errorf("unknown provider %q", p)
 		}
@@ -185,7 +188,7 @@ func fetchAWS(ctx context.Context, out, only string, parallel int, fallback, now
 	return nil
 }
 
-// fetchSimple runs a provider whose fetch returns its own region list (GCP, OCI).
+// fetchSimple runs a provider whose fetch returns its own region list (GCP, OCI, Azure).
 func fetchSimple(ctx context.Context, out, name, now, fallback string, prev *Manifest, m *Manifest,
 	fetch func(context.Context, func(string, any) error) ([][2]string, []string, error)) error {
 	dir := filepath.Join(out, name)
@@ -319,6 +322,12 @@ func mirrorLive(base, out string) error {
 	}
 	if m.Providers["oci"] != nil {
 		files["oci"] = []string{"prices.json"}
+	}
+	if p := m.Providers["azure"]; p != nil {
+		files["azure"] = append(files["azure"], "global.json")
+		for _, r := range p.Regions {
+			files["azure"] = append(files["azure"], r.Code+".json")
+		}
 	}
 	for provider, list := range files {
 		dir := filepath.Join(out, provider)

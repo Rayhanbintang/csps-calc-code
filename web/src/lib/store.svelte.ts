@@ -251,7 +251,7 @@ export async function priceVariant(itemId: string, pricing: Item['pricing']): Pr
 
 export function addAccount(provider: Provider): void {
   const regions = app.manifest?.providers[provider]?.regions ?? [];
-  const preferred: Record<Provider, string> = { aws: 'ap-southeast-3', gcp: 'asia-southeast2', oci: 'ap-singapore-1', onprem: 'onprem' };
+  const preferred: Record<Provider, string> = { aws: 'ap-southeast-3', gcp: 'asia-southeast2', oci: 'ap-singapore-1', azure: 'indonesiacentral', onprem: 'onprem' };
   const region = provider === 'onprem' ? 'onprem' : regions.find((r) => r.code === preferred[provider])?.code ?? regions[0]?.code ?? preferred[provider];
   const n = app.est.accounts.length;
   app.est.accounts.push({

@@ -17,6 +17,7 @@
   --aws: #d97706;
   --gcp: #2563eb;
   --oci: #b91c1c;
+  --azure: #0369a1;
   --onprem: #475569;
   /* Card colours by kind of service. */
   --t-network: #0d9488;
@@ -52,6 +53,7 @@
     --aws: #f59e0b;
     --gcp: #60a5fa;
     --oci: #f87171;
+    --azure: #38bdf8;
     --onprem: #94a3b8;
     --t-network: #2dd4bf;
     --t-cluster: #a78bfa;
@@ -141,6 +143,7 @@ label { display: block; }
 .tag.aws { background: var(--aws); }
 .tag.gcp { background: var(--gcp); }
 .tag.oci { background: var(--oci); }
+.tag.azure { background: var(--azure); }
 .tag.onprem { background: var(--onprem); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
