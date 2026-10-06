@@ -12,6 +12,12 @@ export interface Estimate {
   accounts: Account[];
 }
 
+/** A spot on the board, in board pixels at 100% zoom. Missing = placed automatically. */
+export interface At {
+  x: number;
+  y: number;
+}
+
 export interface Account {
   id: string;
   provider: Provider;
@@ -21,6 +27,8 @@ export interface Account {
   regions: RegionBox[];
   /** Folded on the canvas: only the header shows. */
   folded?: boolean;
+  /** Where the site frame sits on the board. */
+  at?: At;
 }
 
 export interface RegionBox {
@@ -33,6 +41,8 @@ export interface RegionBox {
    *  The next switch measures from `from`, so AWS Jakarta → OCI Batam → Google Cloud lands
    *  in Jakarta, not in Singapore (closest to Batam). A region picked by hand resets it. */
   swap?: { from: string; picked: string };
+  /** Where the box sits inside its site frame, and its width. */
+  at?: At & { w?: number };
 }
 
 export type Spec = Record<string, string | number | boolean>;

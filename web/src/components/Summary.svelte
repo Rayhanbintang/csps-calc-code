@@ -9,15 +9,7 @@
 </script>
 
 <div class="sum">
-  <h2>Estimate total</h2>
-  <dl class="big">
-    <div><dt>Per month</dt><dd class="num">{money(t.monthly)}</dd></div>
-    <div><dt>Upfront</dt><dd class="num">{money(t.upfront)}</dd></div>
-    <div><dt>First 12 months</dt><dd class="num">{money(t.monthly * 12 + t.upfront)}</dd></div>
-    <div><dt>36 months</dt><dd class="num">{money(t.monthly * 36 + t.upfront)}</dd></div>
-  </dl>
-
-  <h3>By site</h3>
+  <h2>Estimate</h2>
   <table>
     <tbody>
       {#each app.est.accounts as acc (acc.id)}
@@ -36,16 +28,26 @@
     </tbody>
   </table>
 
-  <p class="hint small muted">Select an item to edit its size and compare pricing options side by side.</p>
+  <h3>All sites</h3>
+  <dl class="big">
+    <div class="lead"><dt>Per month</dt><dd class="num">{money(t.monthly)}</dd></div>
+    <div><dt>Upfront</dt><dd class="num">{money(t.upfront)}</dd></div>
+    <div><dt>First 12 months</dt><dd class="num">{money(t.monthly * 12 + t.upfront)}</dd></div>
+    <div><dt>36 months</dt><dd class="num">{money(t.monthly * 36 + t.upfront)}</dd></div>
+  </dl>
+
+  <p class="hint small muted">Select a card to edit its size and compare pricing options side by side.</p>
   <p class="disc small">{DISCLAIMER}</p>
 </div>
 
 <style>
   .sum { padding: 14px; }
-  h2 { margin: 0 0 10px; font-size: 15px; }
+  h2 { margin: 0 32px 10px 0; font-size: 15px; }
   h3 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
   .big { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
   .big div { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
+  .big .lead { grid-column: 1 / -1; background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
+  .big .lead dd { font-size: 22px; }
   dt { font-size: 11.5px; color: var(--muted); }
   dd { margin: 2px 0 0; font-size: 18px; font-weight: 800; text-align: left; }
   table { width: 100%; border-collapse: collapse; }

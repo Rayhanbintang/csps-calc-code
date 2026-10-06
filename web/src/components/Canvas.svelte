@@ -9,6 +9,36 @@
   import { drag } from '../lib/drag.svelte';
   import { blockerMessage, swapAccount, swapBlockers } from '../lib/swap';
   import type { Account } from '../lib/types';
+  import { untrack } from 'svelte';
+  import Board from './Board.svelte';
+  import { boxWidth, grab, grabWidth, needsPlace, place, siteWidth } from '../lib/board.svelte';
+
+  // Below 760 px the board turns back into a stacked list (reading a shared estimate on a phone).
+  let wide = $state(typeof window === 'undefined' || window.matchMedia('(min-width: 761px)').matches);
+  $effect(() => {
+    const mq = window.matchMedia('(min-width: 761px)');
+    const on = () => (wide = mq.matches);
+    mq.addEventListener('change', on);
+    window.addEventListener('resize', on);
+    return () => {
+      mq.removeEventListener('change', on);
+      window.removeEventListener('resize', on);
+    };
+  });
+  const free = $derived(wide);
+
+  // Sites and boxes from v1 estimates, imports and share links have no position yet.
+  $effect(() => {
+    if (needsPlace(app.est)) untrack(() => place(app.est));
+  });
+
+  /** Measured height of each box, so a site frame grows to hold its lowest box. */
+  let hs = $state<Record<string, number>>({});
+  function regionsHeight(acc: Account): number {
+    return acc.regions.reduce((m, b) => Math.max(m, (b.at?.y ?? 0) + (hs[b.id] ?? 120)), 0);
+  }
+  /** The frame being moved sits above the others. */
+  let lifted = $state('');
 
   /** The box a drag hovers over (only drops on the box itself, not on a card in it). */
   const over = $derived(drag.active && drag.target?.kind === 'box' && drag.target.ok ? drag.target.boxId : null);
@@ -78,30 +108,49 @@
   </div>
 {/if}
 
-{#if app.ticked.length}
-  <div class="bulk" role="region" aria-label="Bulk actions">
-    <strong>{app.ticked.length} selected</strong>
-    <label>
-      Move to
-      <select bind:value={moveTo}>
-        <option value="">Choose a box</option>
-        {#each boxes as b}<option value={b.id}>{b.label}</option>{/each}
-      </select>
-    </label>
-    <button disabled={!moveTo} onclick={async () => { await moveItems([...app.ticked], moveTo); app.ticked = []; moveTo = ''; }}>Move</button>
-    <button class="ghost" onclick={() => (app.ticked = [])}>Clear</button>
-  </div>
-{/if}
-
-<div class="canvas">
+<Board {free}>
+  {#snippet overlay()}
+    {#if app.ticked.length}
+      <div class="bulk" role="region" aria-label="Bulk actions">
+        <strong>{app.ticked.length} selected</strong>
+        <label>
+          Move to
+          <select bind:value={moveTo}>
+            <option value="">Choose a box</option>
+            {#each boxes as b}<option value={b.id}>{b.label}</option>{/each}
+          </select>
+        </label>
+        <button disabled={!moveTo} onclick={async () => { await moveItems([...app.ticked], moveTo); app.ticked = []; moveTo = ''; }}>Move</button>
+        <button class="ghost" onclick={() => (app.ticked = [])}>Clear</button>
+      </div>
+    {/if}
+    <div class="add">
+      <span class="small muted">Add a site:</span>
+      {#each providers as p}
+        <button onclick={() => addAccount(p)}><span class="dot {p}"></span>{providerNames[p]}</button>
+      {/each}
+    </div>
+  {/snippet}
   {#each app.est.accounts as acc (acc.id)}
     {@const t = accountTotals(acc, prices)}
     {@const k = accountKinds[acc.provider]}
     {@const n = acc.regions.reduce((s, r) => s + [...walk(r.items)].length, 0)}
-    <section class="account {acc.provider}" aria-label="{k.kind} {acc.label}">
+    <section
+      class="account {acc.provider}"
+      class:free
+      class:lifted={lifted === acc.id}
+      aria-label="{k.kind} {acc.label}"
+      style:left={free ? `${acc.at?.x ?? 0}px` : undefined}
+      style:top={free ? `${acc.at?.y ?? 0}px` : undefined}
+      style:width={free ? `${siteWidth(acc)}px` : undefined}
+    >
       <header>
         <div class="ident">
           <div class="kind">
+            {#if free}
+              <button class="grip ghost" aria-label="Move this site" title="Drag to move this site"
+                onpointerdown={(e) => { lifted = acc.id; grab(e, () => acc.at ?? { x: 0, y: 0 }, (at) => (acc.at = at), () => (lifted = '')); }}>⠿</button>
+            {/if}
             <button class="fold ghost" aria-expanded={!acc.folded} aria-label={acc.folded ? 'Show this site' : 'Fold this site'} title={acc.folded ? 'Show this site' : 'Fold this site'} onclick={() => (acc.folded = !acc.folded)}>
               <span class="chev" class:open={!acc.folded}>▸</span>
             </button>
@@ -141,12 +190,18 @@
         <div class="note small" role="status">{swapped.text} <button class="ghost small" aria-label="Dismiss" onclick={() => (swapped = null)}>✕</button></div>
       {/if}
       {#if !acc.folded}
-      <div class="regions">
+      <div class="regions" class:free style:height={free ? `${regionsHeight(acc)}px` : undefined}>
         {#each acc.regions as box (box.id)}
           {@const bt = boxTotals(box, prices)}
           <div
             class="box"
+            class:free
             class:wide={box.items.some((i) => i.children?.length)}
+            class:lifted={lifted === box.id}
+            style:left={free ? `${box.at?.x ?? 0}px` : undefined}
+            style:top={free ? `${box.at?.y ?? 0}px` : undefined}
+            style:width={free ? `${boxWidth(box)}px` : undefined}
+            bind:offsetHeight={hs[box.id]}
             class:over={over === box.id}
             role="group"
             aria-label="Region box {box.label || box.region}"
@@ -154,6 +209,10 @@
             data-box={box.id}
           >
             <div class="boxhead">
+              {#if free}
+                <button class="grip ghost" aria-label="Move this region box" title="Drag to move this box"
+                  onpointerdown={(e) => { lifted = box.id; grab(e, () => box.at ?? { x: 0, y: 0 }, (at) => (box.at = { ...at, w: box.at?.w }), () => (lifted = '')); }}>⠿</button>
+              {/if}
               <button class="fold ghost" aria-expanded={!box.folded} aria-label={box.folded ? 'Show this region' : 'Fold this region'} title={box.folded ? 'Show this region' : 'Fold this region'} onclick={() => (box.folded = !box.folded)}>
                 <span class="chev" class:open={!box.folded}>▸</span>
               </button>
@@ -187,6 +246,10 @@
               {/if}
             </div>
             {/if}
+            {#if free}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div class="resize" title="Drag to change the width" onpointerdown={(e) => grabWidth(e, () => boxWidth(box), (w) => (box.at = { x: box.at?.x ?? 0, y: box.at?.y ?? 0, w }))}></div>
+            {/if}
           </div>
         {/each}
       </div>
@@ -194,16 +257,28 @@
     </section>
   {/each}
 
-  <div class="add">
-    <span class="small muted">Add a site:</span>
-    {#each providers as p}
-      <button onclick={() => addAccount(p)}><span class="dot {p}"></span>{providerNames[p]}</button>
-    {/each}
-  </div>
-</div>
+</Board>
 
 <style>
-  .canvas { display: grid; gap: 14px; }
+  /* On the board, site frames and region boxes sit where the SA put them. */
+  .account.free { position: absolute; }
+  .regions.free { display: block; position: relative; }
+  .box.free { position: absolute; }
+  .account.free:not(:has(.chev.open)) { width: auto !important; }
+  .lifted { z-index: 3; box-shadow: 0 8px 24px rgb(0 0 0 / 18%); }
+  .account:not(.free) + .account { margin-top: 14px; }
+  .grip {
+    width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px;
+    display: inline-grid; place-items: center;
+    color: var(--muted); cursor: grab; touch-action: none; font-size: 14px; line-height: 1;
+  }
+  .grip:hover { color: var(--accent); background: var(--panel-2); }
+  .box { position: relative; }
+  .resize {
+    position: absolute; top: 8px; bottom: 8px; right: -5px; width: 10px;
+    cursor: ew-resize; touch-action: none; border-radius: 4px;
+  }
+  .resize:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
   .account {
     background: var(--panel);
     border: 1px solid var(--line);

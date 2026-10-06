@@ -1,5 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { fly } from 'svelte/transition';
+  import { view } from '../lib/board.svelte';
   import { app, find, repriceAll, saveTabs } from '../lib/store.svelte';
   import Header from './Header.svelte';
   import Tabs from './Tabs.svelte';
@@ -64,6 +66,21 @@
   // find() searches the whole tree, so items inside a VPC, cluster or VM open too.
   const selectedExists = $derived(app.selected !== null && find(app.selected) !== undefined);
 
+  // The right drawer: the estimate summary, or the spec of the selected card. The summary
+  // can be tucked away to give the board the full width; a selection always opens it.
+  const PANEL_KEY = 'csps-calc:panel';
+  let panelOpen = $state(true);
+  try { panelOpen = localStorage.getItem(PANEL_KEY) !== 'closed'; } catch { /* default open */ }
+  function setPanel(on: boolean) {
+    panelOpen = on;
+    try { localStorage.setItem(PANEL_KEY, on ? 'open' : 'closed'); } catch { /* ignore */ }
+  }
+  const showPanel = $derived(selectedExists || panelOpen);
+  let asideW = $state(0);
+  $effect(() => {
+    view.reserve = showPanel ? asideW + 16 : 0;
+  });
+
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') app.selected = null;
   }
@@ -106,19 +123,26 @@
         <span class="status small muted" aria-live="polite">{app.busy > 0 ? 'Pricing…' : ''}</span>
       </div>
       <Reminders />
-      {#if app.view === 'canvas'}
-        <Canvas />
-      {:else}
-        <Review />
-      {/if}
+      <div class="stage" class:review={app.view === 'review'}>
+        {#if app.view === 'canvas'}
+          <Canvas />
+        {:else}
+          <Review />
+        {/if}
+        {#if showPanel}
+          <aside class:sel={selectedExists} bind:offsetWidth={asideW} transition:fly={{ x: 40, duration: 160 }}>
+            {#if selectedExists}
+              {#key app.selected}<Inspector itemId={app.selected!} />{/key}
+            {:else}
+              <button class="ghost small hide" onclick={() => setPanel(false)} title="Hide the totals to give the board more room" aria-label="Hide totals">⇥</button>
+              <Summary />
+            {/if}
+          </aside>
+        {:else}
+          <button class="peek" onclick={() => setPanel(true)} title="Show the estimate totals">Totals</button>
+        {/if}
+      </div>
     </main>
-    <aside class:open={selectedExists}>
-      {#if selectedExists}
-        <Inspector itemId={app.selected!} />
-      {:else}
-        <Summary />
-      {/if}
-    </aside>
   </div>
   <Footer />
 </div>
@@ -129,7 +153,7 @@
     flex: 1;
     display: grid;
     /* The sidebar never takes more than 35% of the window, whatever width was saved. */
-    grid-template-columns: min(var(--nav-w, 230px), 35vw) minmax(0, 1fr) minmax(360px, 560px);
+    grid-template-columns: min(var(--nav-w, 230px), 35vw) minmax(0, 1fr);
     gap: 16px;
     padding: 16px;
     align-items: start;
@@ -158,31 +182,48 @@
   }
   .resizer:hover::after, .resizer:focus-visible::after, .dragging .resizer::after { background: var(--accent); }
   .dragging { cursor: col-resize; user-select: none; }
+  .stage { position: relative; }
+  /* The drawer lies over the right edge of the board. */
   aside {
-    position: sticky;
-    top: 16px;
-    max-height: calc(100vh - 110px);
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: min(400px, 46%);
+    max-height: 100%;
     overflow: auto;
+    z-index: 6;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    box-shadow: var(--shadow);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 14%);
+  }
+  aside.sel { width: min(460px, 60%); border-color: var(--accent); }
+  .hide { position: absolute; top: 8px; right: 8px; padding: 2px 7px; z-index: 1; }
+  .peek {
+    position: absolute; top: 0; right: 0; z-index: 6;
+    writing-mode: vertical-rl; padding: 10px 5px; border-radius: 8px 0 0 8px;
+    font-weight: 600; font-size: 12px; box-shadow: var(--shadow);
   }
   .tabs { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
   .tabs button { border-radius: 999px; }
   .tabs button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
   .status { margin-left: auto; }
   .error { margin: 12px 16px 0; padding: 10px 12px; border: 1px solid var(--danger); border-radius: 8px; color: var(--danger); }
-  @media (max-width: 1180px) {
-    .layout { grid-template-columns: min(var(--nav-w, 230px), 35vw) minmax(0, 1fr); }
-    aside { grid-column: 1 / -1; position: static; max-height: none; }
+  /* On a wide screen the page is exactly one window tall and the board takes what is left. */
+  @media (min-width: 761px) {
+    .shell { height: 100vh; }
+    .layout { grid-template-rows: minmax(0, 1fr); align-items: stretch; min-height: 0; }
+    main { display: flex; flex-direction: column; min-height: 0; }
+    .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .stage.review { overflow: auto; }
   }
   @media (max-width: 760px) {
-    /* On a phone the estimate comes first; the service list follows it. */
+    /* On a phone the estimate comes first; the totals follow it, then the service list. */
     .layout { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; }
     main { order: 1; }
-    aside { order: 2; }
     .navcol { order: 3; position: static; }
     .resizer { display: none; }
+    aside, aside.sel { position: static; width: auto; max-height: none; margin-top: 12px; box-shadow: var(--shadow); }
+    .peek { position: static; writing-mode: horizontal-tb; margin-top: 12px; }
   }
 </style>

@@ -45,8 +45,8 @@
   const over = $derived(t?.kind === 'inside' && t.itemId === item.id ? (t.ok ? 'yes' : 'no') : null);
   const moving = $derived(drag.active && !!drag.ids?.includes(item.id));
 
+  // The pointerdown also reaches the board, so a one-finger swipe that starts on a card pans.
   function onPress(e: PointerEvent) {
-    e.stopPropagation();
     press(e, () => {
       const ids = ticked ? [...app.ticked] : [item.id];
       return { ids, label: ids.length > 1 ? `${ids.length} cards` : item.name || svc?.label || item.svc };

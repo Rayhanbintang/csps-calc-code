@@ -80,12 +80,31 @@ function edgeSpeed(p: number, size: number): number {
   return 0;
 }
 
+/** What scrolls when a drag nears an edge: the window, or the board while it is on screen. */
+export interface Scroller {
+  rect(): { left: number; top: number; width: number; height: number };
+  by(dx: number, dy: number): void;
+}
+const windowScroller: Scroller = {
+  rect: () => ({ left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }),
+  by: (dx, dy) => window.scrollBy(dx, dy),
+};
+let scroller: Scroller = windowScroller;
+export function setScroller(s: Scroller | null): void {
+  scroller = s ?? windowScroller;
+}
+
 let frame = 0;
 function autoScroll() {
   if (!drag.active) return;
-  const dy = edgeSpeed(drag.y, window.innerHeight);
-  if (dy) window.scrollBy(0, dy);
-  if (dy) drag.target = targetAt(drag.x, drag.y);
+  const r = scroller.rect();
+  const inside = drag.x >= r.left && drag.x <= r.left + r.width && drag.y >= r.top && drag.y <= r.top + r.height;
+  const dx = inside ? edgeSpeed(drag.x - r.left, r.width) : 0;
+  const dy = inside ? edgeSpeed(drag.y - r.top, r.height) : 0;
+  if (dx || dy) {
+    scroller.by(dx, dy);
+    drag.target = targetAt(drag.x, drag.y);
+  }
   frame = requestAnimationFrame(autoScroll);
 }
 

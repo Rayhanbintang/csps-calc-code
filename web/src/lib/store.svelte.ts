@@ -10,6 +10,7 @@ import { readSheet } from './xlsxread';
 import { SHEET, parseTemplate } from './awsimport';
 import type { ImportResult } from './awsimport';
 import { syncVmSize } from './catalog/vm';
+import { freeBoxSpot, freeSpot } from './board.svelte';
 
 const DRAFT_KEY = 'csps-calc:draft'; // before tabs: one estimate
 const TABS_KEY = 'csps-calc:tabs';
@@ -220,14 +221,15 @@ export function addAccount(provider: Provider): void {
     id: uid('a'),
     provider,
     label: n === 0 ? 'DC' : n === 1 ? 'DRC' : `Site ${n + 1}`,
-    regions: [{ id: uid('r'), region, items: [] }],
+    regions: [{ id: uid('r'), region, items: [], at: { x: 0, y: 0 } }],
+    at: freeSpot(app.est),
   });
 }
 
 export function addRegion(accId: string): void {
   const acc = app.est.accounts.find((a) => a.id === accId);
   if (!acc) return;
-  acc.regions.push({ id: uid('r'), region: acc.regions[acc.regions.length - 1]?.region ?? '', items: [] });
+  acc.regions.push({ id: uid('r'), region: acc.regions[acc.regions.length - 1]?.region ?? '', items: [], at: freeBoxSpot(acc) });
 }
 
 export function removeAccount(accId: string): void {
