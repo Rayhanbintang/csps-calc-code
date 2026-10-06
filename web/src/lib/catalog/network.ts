@@ -423,18 +423,32 @@ export const interconnect: Service = {
   providers: {
     aws: {
       product: 'AWS Direct Connect',
+      // Data out over Direct Connect is priced per location the circuit lands at.
+      fields: async (ctx) => {
+        const outs = (await aws.rows(ctx.region, 'dx')).filter((r) => r.k.endsWith('-DataXfer-Out') && r.f === 'Data Transfer' && r.a?.toLocation);
+        outs.sort((a, b) => a.a!.toLocation.localeCompare(b.a!.toLocation));
+        return [{
+          key: 'aws.dx', label: 'Direct Connect location', type: 'select',
+          options: [{ value: '', label: 'Lowest data-out rate' }, ...outs.map((r) => ({ value: r.a!.toLocation, label: `${r.a!.toLocation} · $${awsRate(r)}/GB` }))],
+        }];
+      },
       price: async (ctx, item) => {
         const rows = await aws.rows(ctx.region, 'dx');
         const hosted = str(item.spec, 'kind') === 'hosted';
         const cap = str(item.spec, 'cap', '1G');
         const port = rows.find((r) => r.a?.capacity === cap && r.a?.connectionType === (hosted ? 'Hosted' : 'Dedicated'));
         if (!port) return unavailable(`No ${hosted ? 'hosted' : 'dedicated'} ${cap} port price at Direct Connect locations for this region.`);
-        const outs = rows.filter((r) => r.k.endsWith('-DataXfer-Out') && r.f === 'Data Transfer').map(awsRate).filter(Number.isFinite);
+        const outs = rows.filter((r) => r.k.endsWith('-DataXfer-Out') && r.f === 'Data Transfer' && Number.isFinite(awsRate(r)));
+        const at = str(item.spec, 'aws.dx');
+        const out = at ? outs.find((r) => r.a?.toLocation === at) : [...outs].sort((a, b) => awsRate(a) - awsRate(b))[0];
+        if (at && !out) return unavailable(`${at} has no data-out rate from this region.`);
         const ports = num(item.spec, 'ports', 1) * item.qty;
         const lines: Line[] = [line(`${hosted ? 'Hosted' : 'Dedicated'} ${cap} port`, ports * H, 'port-hours', awsRate(port))];
         const gb = num(item.spec, 'gb', 0) * item.qty;
-        if (gb && outs.length) lines.push(line('Data transfer out over Direct Connect', gb, 'GB', Math.min(...outs)));
-        return priced(lines, { sku: `Direct Connect ${cap}`, notes: ['Data-out rate is the lowest among Direct Connect locations for this region; partner and cross-connect fees are not included.'] });
+        if (gb && out) lines.push(line(`Data out over Direct Connect, ${out.a?.toLocation ?? 'location'}`, gb, 'GB', awsRate(out)));
+        const notes = ['Partner and cross-connect fees are not included.'];
+        if (!at) notes.unshift('Data out uses the lowest rate among Direct Connect locations; pick the location for its own rate.');
+        return priced(lines, { sku: `Direct Connect ${cap}`, notes });
       },
     },
     gcp: {

@@ -77,6 +77,30 @@ function fnUsage(item: Item) {
   return { req, ms, mb, gbs: req * (ms / 1000) * (mb / 1024) };
 }
 
+/** Savings Plan pricing for usage that a Compute Savings Plan covers (Fargate, Lambda
+ *  duration). The commitment is the average hourly spend at the plan's rate; partial
+ *  upfront pays half the term ahead, all upfront the whole term. */
+async function usageSP(ctx: Ctx, item: Item, parts: { label: string; usage: string; qty: number; unit: string }[]): Promise<{ lines: Line[]; upfront: number }> {
+  const p = item.pricing ?? { model: 'od' };
+  const list = await aws.sp(ctx.region);
+  const share = p.pay === 'all' ? 1 : p.pay === 'partial' ? 0.5 : 0;
+  const lines: Line[] = [];
+  let upfront = 0;
+  for (const part of parts) {
+    const r = list.find((x) => x.k === part.usage)?.sp.find((x) => x.k === 'c' && x.y === (p.term ?? 1) && x.p === (p.pay ?? 'no'));
+    if (!r) throw new Error('No Savings Plan rate for this usage in this region yet.');
+    const monthly = part.qty * r.h;
+    if (share < 1) lines.push(line(`${part.label}, Savings Plan`, part.qty, part.unit, r.h * (1 - share)));
+    upfront += monthly * 12 * (p.term ?? 1) * share;
+  }
+  return { lines, upfront };
+}
+
+const spModels = [
+  { model: 'od' as const, label: 'On-demand' },
+  { model: 'sp' as const, label: 'Compute Savings Plan', terms: [1, 3] as (1 | 3)[], pays: ['no', 'partial', 'all'] as ('no' | 'partial' | 'all')[] },
+];
+
 export const functions: Service = {
   id: 'functions',
   label: 'Functions',
@@ -92,14 +116,19 @@ export const functions: Service = {
   providers: {
     aws: {
       product: 'AWS Lambda',
+      models: spModels,
       price: async (ctx, item) => {
         const rows = await aws.rows(ctx.region, 'lambda');
         const { req, gbs } = fnUsage(item);
         const arm = str(item.spec, 'arch') === 'arm';
-        const lines: Line[] = [
-          line('Requests', req, 'requests', must(awsRate(awsFind(rows, arm ? 'Request-ARM' : 'Request')), 'Lambda requests')),
-          tierLine('Compute', gbs, 'GB-seconds', must(awsCost(awsFind(rows, arm ? 'Lambda-GB-Second-ARM' : 'Lambda-GB-Second'), gbs), 'Lambda compute')),
-        ];
+        const usage = arm ? 'Lambda-GB-Second-ARM' : 'Lambda-GB-Second';
+        const lines: Line[] = [line('Requests', req, 'requests', must(awsRate(awsFind(rows, arm ? 'Request-ARM' : 'Request')), 'Lambda requests'))];
+        if ((item.pricing?.model ?? 'od') === 'sp') {
+          // A Compute Savings Plan covers Lambda duration, not requests.
+          const c = await usageSP(ctx, item, [{ label: 'Compute', usage, qty: gbs, unit: 'GB-seconds' }]);
+          return priced([...lines, ...c.lines], { upfront: c.upfront, sku: `Lambda ${arm ? 'Arm' : 'x86'}`, notes: ['The Savings Plan covers duration; requests stay at the on-demand rate.'] });
+        }
+        lines.push(tierLine('Compute', gbs, 'GB-seconds', must(awsCost(awsFind(rows, usage), gbs), 'Lambda compute')));
         return priced(lines, { sku: `Lambda ${arm ? 'Arm' : 'x86'}` });
       },
     },
@@ -160,10 +189,18 @@ export const containers: Service = {
   providers: {
     aws: {
       product: 'AWS Fargate',
+      models: spModels,
       price: async (ctx, item) => {
         const rows = await aws.rows(ctx.region, 'fargate');
         const { tasks, hrs, vcpu, gb } = ctUsage(item);
         const arm = str(item.spec, 'arch') === 'arm';
+        if ((item.pricing?.model ?? 'od') === 'sp') {
+          const c = await usageSP(ctx, item, [
+            { label: 'vCPU', usage: arm ? 'Fargate-ARM-vCPU-Hours:perCPU' : 'Fargate-vCPU-Hours:perCPU', qty: tasks * vcpu * hrs, unit: 'vCPU-hours' },
+            { label: 'Memory', usage: arm ? 'Fargate-ARM-GB-Hours' : 'Fargate-GB-Hours', qty: tasks * gb * hrs, unit: 'GB-hours' },
+          ]);
+          return priced(c.lines, { upfront: c.upfront, sku: `Fargate Linux ${arm ? 'Arm' : 'x86'}` });
+        }
         return priced([
           line('vCPU', tasks * vcpu * hrs, 'vCPU-hours', must(awsRate(awsFind(rows, arm ? 'Fargate-ARM-vCPU-Hours:perCPU' : 'Fargate-vCPU-Hours:perCPU')), 'Fargate vCPU')),
           line('Memory', tasks * gb * hrs, 'GB-hours', must(awsRate(awsFind(rows, arm ? 'Fargate-ARM-GB-Hours' : 'Fargate-GB-Hours')), 'Fargate memory')),

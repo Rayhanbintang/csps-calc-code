@@ -298,7 +298,7 @@ func mirrorLive(base, out string) error {
 	}
 	files := map[string][]string{}
 	if p := m.Providers["aws"]; p != nil {
-		names := []string{"ec2.json", "ec2x.json"}
+		names := []string{"ec2.json", "ec2x.json", "sp.json"}
 		for _, s := range aws.Regional {
 			names = append(names, s.File+".json")
 		}

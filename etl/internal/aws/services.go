@@ -27,7 +27,9 @@ var plainNode = regexp.MustCompile(`^([A-Z]{2,4}\d?-)?NodeUsage:`)
 // Regional services, fetched once per region.
 var Regional = []Service{
 	{Code: "AmazonRDS", File: "rds",
-		Attrs: []string{"instanceType", "databaseEngine", "databaseEdition", "licenseModel", "deploymentOption", "vcpu", "memory", "volumeType"},
+		// deploymentModel is "Custom" on RDS Custom rows, which otherwise look like plain
+		// RDS rows (same engine, edition, licence and deployment option).
+		Attrs: []string{"instanceType", "databaseEngine", "databaseEdition", "licenseModel", "deploymentOption", "deploymentModel", "vcpu", "memory", "volumeType"},
 		Keep: func(f string, a map[string]string) bool {
 			if strings.Contains(a["databaseEngine"], "Outposts") {
 				return false
@@ -38,6 +40,8 @@ var Regional = []Service{
 				return d == "Single-AZ" || d == "Multi-AZ"
 			case "Database Storage", "Provisioned IOPS", "Provisioned Throughput":
 				return true
+			case "System Operation":
+				return strings.HasSuffix(a["usagetype"], "Aurora:StorageIOUsage") // Aurora Standard I/O requests
 			}
 			return false
 		}},

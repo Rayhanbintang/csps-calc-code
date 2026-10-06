@@ -2,7 +2,7 @@
 import type { Item, Line, Priced, Spec } from '../types';
 import { aws, gcp, oci } from '../prices';
 import type { AwsRow } from '../prices';
-import { awsCommitted } from './vm';
+import { awsCommitted, ociSqlParts, ociShapes, ocpus } from './vm';
 import {
   H, awsFind, awsRate, gcpFind, gcpRate, line, must, num, ociPart, ociRate, opts, priced, str, unavailable,
 } from './util';
@@ -55,31 +55,63 @@ function gib(s: string | undefined): number {
   return parseFloat(String(s ?? '').replace(/,/g, '')) || 0;
 }
 
+/** RDS Custom (the SA gets OS access) is sold for SQL Server and Oracle. */
+function custom(spec: Spec): boolean {
+  const e = str(spec, 'engine', 'mysql');
+  return str(spec, 'aws.deploy') === 'custom' && (e.startsWith('sqlserver') || e.startsWith('oracle'));
+}
+
+function ioOptimized(spec: Spec): boolean {
+  return str(spec, 'aws.aurora') === 'io';
+}
+
 function rdsInstances(rows: AwsRow[], spec: Spec): AwsRow[] {
-  const [eng, edition, lic] = rdsEngine[str(spec, 'engine', 'mysql')];
+  const [eng, edition, lic0] = rdsEngine[str(spec, 'engine', 'mysql')];
   const aurora = eng.startsWith('Aurora');
   const want = aurora || !ha(spec) ? 'Single-AZ' : 'Multi-AZ';
+  const isCustom = custom(spec);
+  // RDS Custom for Oracle is bring-your-own-licence only.
+  const lic = isCustom && eng === 'Oracle' ? 'Bring your own license' : lic0;
   return rows.filter(
     (r) =>
       r.f === 'Database Instance' &&
       r.a?.databaseEngine === eng &&
       (edition === undefined || r.a?.databaseEdition === edition) &&
-      r.a?.licenseModel === lic &&
+      // RDS Custom for SQL Server rows carry no licence model; the licence is included.
+      (isCustom && eng === 'SQL Server' ? true : r.a?.licenseModel === lic) &&
       r.a?.deploymentOption === want &&
-      !r.k.startsWith('InstanceUsageIOOptimized'),
+      (r.a?.deploymentModel === 'Custom') === isCustom &&
+      r.k.startsWith('InstanceUsageIOOptimized') === (aurora && ioOptimized(spec)),
   );
 }
 
 async function rdsFields(ctx: Ctx, spec: Spec): Promise<Field[]> {
   const rows = rdsInstances(await aws.rows(ctx.region, 'rds'), spec);
   const types = sortTypes(rows);
-  return [{
+  const engine = str(spec, 'engine', 'mysql');
+  const extra: Field[] = [];
+  if (engine.startsWith('aurora')) {
+    extra.push(
+      { key: 'aws.aurora', label: 'Aurora storage', type: 'select', options: opts(['standard', 'Standard (pay per I/O)'], ['io', 'I/O-Optimized (no I/O charge)']) },
+      { key: 'readers', label: 'Reader instances', type: 'number', min: 0, step: 1, help: 'Replicas next to the writer. High availability needs at least one.' },
+    );
+    if (!ioOptimized(spec)) extra.push({ key: 'ios', label: 'I/O requests', type: 'number', unit: 'million / month', min: 0, step: 10 });
+  }
+  if (engine.startsWith('sqlserver') || engine.startsWith('oracle'))
+    extra.push({ key: 'aws.deploy', label: 'Deployment', type: 'select', options: opts(['standard', 'RDS (managed)'], ['custom', 'RDS Custom (OS access)']) });
+  return [...extra, {
     key: 'aws.class', label: 'DB instance class', type: 'select',
     options: [{ value: '', label: 'Pick the closest match for me' }, ...types.map((t) => {
       const r = rows.find((x) => x.a!.instanceType === t)!;
       return { value: t, label: `${t} · ${r.a!.vcpu} vCPU · ${r.a!.memory}` };
     })],
   }];
+}
+
+/** Aurora readers: the field when set, else one with high availability. */
+function readers(spec: Spec): number {
+  if (spec.readers !== undefined && spec.readers !== '') return Math.max(0, Math.round(num(spec, 'readers', 0)));
+  return ha(spec) ? 1 : 0;
 }
 
 async function rdsPrice(ctx: Ctx, item: Item): Promise<Priced> {
@@ -101,9 +133,12 @@ async function rdsPrice(ctx: Ctx, item: Item): Promise<Priced> {
   if (!row) return unavailable(chosen ? `${chosen} is not sold for this engine here.` : 'No DB instance class fits the vCPU and memory asked for.');
 
   const t = row.a!.instanceType;
-  const nodes = aurora && ha(item.spec) ? 2 : 1;
+  const rd = aurora ? readers(item.spec) : 0;
+  const nodes = 1 + rd;
   const instItem = { ...item, qty: item.qty * nodes };
-  const label = `${t} ${eng}${aurora && nodes === 2 ? ' (writer + reader)' : ha(item.spec) ? ' Multi-AZ' : ''}`;
+  const label = aurora
+    ? `${t} ${eng}${ioOptimized(item.spec) ? ' I/O-Optimized' : ''}${rd ? ` (writer + ${rd} reader${rd > 1 ? 's' : ''})` : ''}`
+    : `${t} ${eng}${custom(item.spec) ? ' Custom' : ''}${ha(item.spec) ? ' Multi-AZ' : ''}`;
   const c = awsCommitted(instItem, label, awsRate(row), Math.min(H, num(item.spec, 'hours', H)), row.ri, undefined);
   const lines: Line[] = [...c.lines];
   const notes: string[] = c.note ? [c.note] : [];
@@ -111,9 +146,10 @@ async function rdsPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const gb = num(item.spec, 'gb', 100) * item.qty;
   if (gb > 0) {
     if (aurora) {
-      const s = all.find((r) => r.k === 'Aurora:StorageUsage' && r.a?.databaseEngine === eng);
-      lines.push(line('Aurora storage', gb, 'GB-month', must(awsRate(s), 'Aurora storage')));
-      notes.push('Aurora Standard also bills I/O requests; not included.');
+      // Some regions list Aurora storage per engine, others under "Any".
+      const key = ioOptimized(item.spec) ? 'Aurora:IO-OptimizedStorageUsage' : 'Aurora:StorageUsage';
+      const s = all.find((x) => x.k === key && x.a?.databaseEngine === eng) ?? all.find((x) => x.k === key && x.a?.databaseEngine === 'Any');
+      lines.push(line(`Aurora storage${ioOptimized(item.spec) ? ', I/O-Optimized' : ''}`, gb, 'GB-month', must(awsRate(s), 'Aurora storage')));
     } else {
       const multi = ha(item.spec);
       const keys = engineKey.startsWith('sqlserver') && multi
@@ -124,6 +160,14 @@ async function rdsPrice(ctx: Ctx, item: Item): Promise<Priced> {
       lines.push(line(`gp3 storage${multi ? ', Multi-AZ' : ''}`, gb, 'GB-month', must(awsRate(s), 'RDS storage')));
     }
   }
+  if (aurora && !ioOptimized(item.spec)) {
+    const ios = num(item.spec, 'ios', 0) * 1e6 * item.qty;
+    if (ios) {
+      const io = all.find((x) => x.k === 'Aurora:StorageIOUsage' && x.a?.databaseEngine === eng) ?? all.find((x) => x.k === 'Aurora:StorageIOUsage');
+      lines.push(line('Aurora I/O requests', ios, 'requests', must(awsRate(io), 'Aurora I/O')));
+    }
+  }
+  if (custom(item.spec)) notes.push(eng === 'Oracle' ? 'RDS Custom for Oracle needs your own Oracle licence.' : 'RDS Custom gives access to the operating system; the SQL Server licence is included.');
   return priced(lines, { upfront: c.upfront, sku: `${t} · ${row.a!.vcpu} vCPU · ${row.a!.memory}`, notes });
 }
 
@@ -145,9 +189,15 @@ async function cloudSqlPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const q = item.qty;
   const hrs = Math.min(H, num(item.spec, 'hours', H));
   const p = item.pricing ?? { model: 'od' };
-  // Google lists Cloud SQL committed use as a percentage, not as SKUs: 25% off for one
-  // year, 52% off for three years, on vCPU and memory (cloud.google.com/sql/cud).
-  const cud = p.model === 'cud' ? (p.term === 3 ? 0.48 : 0.75) : 1;
+  // Cloud SQL committed use is a dollar-based commitment: each $0.01 an hour of on-demand
+  // vCPU and memory costs the SKU price, so the price × 100 is the share left to pay
+  // ($0.0075 → 75% for one year, $0.0048 → 48% for three).
+  let cud = 1;
+  if (p.model === 'cud') {
+    const years = p.term === 3 ? '3 years' : '1 year';
+    const sku = gcpFind(rows, new RegExp(`^Commitment - dollar based v1: Cloud SQL database .+ for ${years}$`), 'OnDemand', 'sql');
+    cud = must(gcpRate(sku), 'Cloud SQL commitment') * 100;
+  }
   const billHrs = p.model === 'cud' ? H : hrs;
   const tag = p.model === 'cud' ? `, ${p.term ?? 1}-year commitment` : '';
   const lines: Line[] = [
@@ -156,7 +206,7 @@ async function cloudSqlPrice(ctx: Ctx, item: Item): Promise<Priced> {
   ];
   const gb = num(item.spec, 'gb', 100) * q;
   if (gb > 0) lines.push(line(`SSD storage${multi ? ' (HA)' : ''}`, gb, 'GiB-month', must(gcpRate(disk), 'Cloud SQL storage')));
-  const notes = p.model === 'cud' ? ['Cloud SQL committed use discount taken from Google\'s published rate (25% / 52%), not from the price feed.'] : [];
+  const notes = p.model === 'cud' ? [`Committed use: ${Math.round((1 - cud) * 100)}% off vCPU and memory, from Google's commitment SKU.`] : [];
   if (engine === 'mariadb') notes.push('Cloud SQL has no MariaDB; priced as MySQL.');
   if (engine.startsWith('sqlserver')) {
     const ed = { 'sqlserver-std': 'Standard', 'sqlserver-ent': 'Enterprise', 'sqlserver-web': 'Web' }[engine]!;
@@ -201,7 +251,46 @@ async function ociDbPrice(_ctx: Ctx, item: Item): Promise<Priced> {
     if (gb) lines.push(line('Database optimized storage', gb, 'GB-month', must(ociRate(ociPart(rows, 'B99062')), 'PostgreSQL storage')));
     return priced(lines, { sku: `OCI Database with PostgreSQL · ${ocpu} OCPU`, notes: ['Storage is shared by all nodes of a database system.'] });
   }
-  return unavailable('OCI managed databases here cover MySQL and PostgreSQL. Price SQL Server or Oracle as a VM with a licence line.');
+  if (engine.startsWith('oracle')) {
+    // Base Database Service bills compute infrastructure and the database edition per
+    // ECPU each, plus block storage. A standby for high availability doubles all three.
+    const ed = str(item.spec, 'oci.oracle', 'se');
+    const parts: Record<string, [string, string]> = {
+      se: ['B112725', 'Standard Edition'], ee: ['B112726', 'Enterprise Edition'], hp: ['B112727', 'Enterprise Edition High Performance'], byol: ['B112728', 'bring your own licence'],
+    };
+    const [part, name] = parts[ed] ?? parts.se;
+    const ecpu = Math.max(1, Math.ceil(vcpu));
+    const nodes = multi ? 2 : 1;
+    const lines: Line[] = [
+      line(`Compute infrastructure, ${ecpu} ECPU${multi ? ' × 2 (Data Guard)' : ''}`, ecpu * nodes * hrs * q, 'ECPU-hours', must(ociRate(ociPart(rows, 'B112724')), 'Base Database infrastructure')),
+      line(`Oracle Database, ${name}`, ecpu * nodes * hrs * q, 'ECPU-hours', must(ociRate(ociPart(rows, part)), 'Base Database edition')),
+    ];
+    if (gb) lines.push(line(`Database storage${multi ? ' × 2' : ''}`, gb * nodes, 'GB-month', must(ociRate(ociPart(rows, 'B111584')), 'Base Database storage')));
+    return priced(lines, { sku: `Base Database Service · ${ecpu} ECPU · ${name}`, notes: multi ? ['High availability is priced as a Data Guard standby of the same size.'] : [] });
+  }
+  if (engine.startsWith('sqlserver')) {
+    // OCI has no managed SQL Server: it runs on a VM from a marketplace image that carries
+    // the SQL Server and Windows licences.
+    const sw = { 'sqlserver-std': 'sql-std', 'sqlserver-ent': 'sql-ent' }[engine];
+    if (!sw) return unavailable('OCI sells SQL Server Standard and Enterprise images; there is no Web edition.');
+    const [licPart, ed] = ociSqlParts[sw];
+    const shape = ociShapes['VM.Standard.E5.Flex'];
+    const o = ocpus(shape, vcpu);
+    const mem = num(item.spec, 'mem', 8);
+    const nodes = multi ? 2 : 1;
+    const oh = o * nodes * hrs * q;
+    const lines: Line[] = [
+      line(`${shape.name}, ${o} OCPU${multi ? ' × 2' : ''}`, oh, 'OCPU-hours', must(ociRate(ociPart(rows, shape.ocpu)), 'OCPU')),
+      line(`${shape.name} memory, ${mem} GB`, mem * nodes * hrs * q, 'GB-hours', must(ociRate(ociPart(rows, shape.mem)), 'memory')),
+      line('Windows Server licence', oh, 'OCPU-hours', must(ociRate(ociPart(rows, 'B88318')), 'Windows licence')),
+      line(`SQL Server ${ed} licence`, oh, 'OCPU-hours', must(ociRate(ociPart(rows, licPart)), `SQL Server ${ed} licence`)),
+    ];
+    if (gb) lines.push(line(`Block Volume${multi ? ' × 2' : ''}`, gb * nodes, 'GB-month', must(ociRate(ociPart(rows, 'B91961')), 'block storage')));
+    const notes = ['OCI has no managed SQL Server; this is a VM from a SQL Server marketplace image.'];
+    if (multi) notes.push('High availability is priced as two VMs (Always On); the second needs its own licence.');
+    return priced(lines, { sku: `SQL Server ${ed} on ${shape.name} · ${o} OCPU`, notes });
+  }
+  return unavailable('OCI has no managed database for this engine here.');
 }
 
 export const db: Service = {
@@ -233,7 +322,10 @@ export const db: Service = {
       adopt: async (_c, item) => ({ ...item, pricing: { model: 'od' }, check: item.spec.engine?.toString().startsWith('aurora') ? 'Aurora has no Google Cloud equivalent; pick an engine.' : undefined }),
     },
     oci: {
-      product: 'OCI MySQL HeatWave / PostgreSQL',
+      product: 'OCI Database',
+      fields: async (_c, spec) => (str(spec, 'engine').startsWith('oracle')
+        ? [{ key: 'oci.oracle', label: 'Oracle edition', type: 'select', options: opts(['se', 'Standard Edition'], ['ee', 'Enterprise Edition'], ['hp', 'Enterprise Edition High Performance'], ['byol', 'Bring your own licence']) }]
+        : []),
       models: [{ model: 'od', label: 'Pay as you go' }],
       price: ociDbPrice,
       adopt: async (_c, item) => ({ ...item, pricing: { model: 'od' } }),

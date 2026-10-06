@@ -307,6 +307,9 @@ export const ociShapes: Record<string, OciShape> = {
   'VM.Standard.A1.Flex': { name: 'VM.Standard.A1.Flex', ocpu: 'B93297', mem: 'B93298', arch: 'arm' },
 };
 
+/** SQL Server licences sold with OCI marketplace images, per OCPU-hour. There is no Web edition. */
+export const ociSqlParts: Record<string, [string, string]> = { 'sql-std': ['B91373', 'Standard'], 'sql-ent': ['B91372', 'Enterprise'] };
+
 export function ocpus(shape: OciShape, vcpu: number): number {
   return shape.arch === 'arm' ? Math.max(1, Math.ceil(vcpu)) : Math.max(1, Math.ceil(vcpu / 2));
 }
@@ -340,11 +343,14 @@ async function ociVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
     tierLine(`${shape.name} OCPU (${o} OCPU = ${shape.arch === 'arm' ? o : o * 2} vCPU)`, ocpuHours, 'OCPU-hours', must(ociCost(ocpuRow, ocpuHours), 'OCPU')),
     tierLine(`${shape.name} memory`, memHours, 'GB-hours', must(ociCost(memRow, memHours), 'memory')),
   ];
-  if (os === 'windows' && !byol(item.spec)) {
+  // SQL Server images run on Windows, so the Windows licence applies as well.
+  const sql = ociSqlParts[sw];
+  if ((os === 'windows' || sql) && !byol(item.spec)) {
     lines.push(line('Windows Server licence', ocpuHours, 'OCPU-hours', must(ociRate(ociPart(rows, 'B88318')), 'Windows licence')));
   }
+  if (sql && !byol(item.spec)) lines.push(line(`SQL Server ${sql[1]} licence (marketplace image)`, ocpuHours, 'OCPU-hours', must(ociRate(ociPart(rows, sql[0])), `SQL Server ${sql[1]} licence`)));
   if (os === 'rhel' || os === 'suse' || os === 'ubuntu-pro') notes.push('OCI has no licence-included price for this OS; add the licence as a custom line if needed.');
-  if (sw !== 'none') notes.push('OCI has no licence-included SQL Server on VMs; add the licence as a custom line.');
+  if (sw === 'sql-web') notes.push('OCI sells no SQL Server Web licence; add it as a custom line.');
   if (mem > o * 64) notes.push(`${shape.name} allows at most 64 GB per OCPU; raise the vCPU count.`);
   return priced(lines, { sku: `${shape.name} · ${o} OCPU · ${mem} GB`, notes });
 }

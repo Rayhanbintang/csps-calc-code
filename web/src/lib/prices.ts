@@ -22,6 +22,7 @@ export interface AwsInstance {
   t: string; c: number; m: number; ar?: string; os: string; sw?: string; byol?: boolean;
   od: number; ri?: AwsReserved[]; sp?: AwsSP[];
 }
+export interface AwsUsageSP { k: string; sp: AwsSP[] }
 export interface AwsRow {
   k: string; o?: string; f?: string; u: string; t: Tier[];
   a?: Record<string, string>; ri?: AwsReserved[];
@@ -75,6 +76,13 @@ export const aws = {
       throw e;
     }),
   global: (file: string) => getGz<AwsRow[]>(`aws/global/${file}.json`),
+  /** Compute Savings Plan rates for Fargate and Lambda usage types. Missing until the
+   *  first full price fetch after this file was added; then [] means "no rates". */
+  sp: (region: string) =>
+    getGz<AwsUsageSP[]>(`aws/${region}/sp.json`).catch((e) => {
+      if (String(e).includes('HTTP 404')) return [] as AwsUsageSP[];
+      throw e;
+    }),
 };
 
 export const gcp = {

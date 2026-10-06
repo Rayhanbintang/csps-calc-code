@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
+	"strings"
 )
 
 type spProduct struct {
@@ -28,10 +30,22 @@ type spTerm struct {
 	} `json:"rates"`
 }
 
+// UsageSP is the Compute Savings Plan rates for one Fargate or Lambda usage type, e.g.
+// "Fargate-vCPU-Hours:perCPU" or "Lambda-GB-Second". Rates are per unit of that usage.
+type UsageSP struct {
+	Usage string   `json:"k"`
+	SP    []SPRate `json:"sp"`
+}
+
+// spServices are the non-EC2 services a Compute Savings Plan covers.
+var spServices = map[string]bool{"AmazonECS": true, "AWSLambda": true}
+
 // AttachSavingsPlans streams a region's AWSComputeSavingsPlan file and adds the EC2
 // rates of each Compute and EC2 Instance Savings Plan to the matching instances.
-// A rate matches an instance on usage type plus operation.
-func AttachSavingsPlans(r io.Reader, insts []Instance) error {
+// A rate matches an instance on usage type plus operation. It also returns the Compute
+// Savings Plan rates for Fargate and Lambda usage types, with the region prefix removed.
+func AttachSavingsPlans(r io.Reader, insts []Instance, prefix string) ([]UsageSP, error) {
+	other := map[string][]SPRate{}
 	byKey := map[string][]int{}
 	for i := range insts {
 		k := insts[i].usage + "|" + insts[i].op
@@ -46,12 +60,12 @@ func AttachSavingsPlans(r io.Reader, insts []Instance) error {
 
 	dec := json.NewDecoder(r)
 	if err := expectDelim(dec, '{'); err != nil {
-		return err
+		return nil, err
 	}
 	for dec.More() {
 		key, err := stringToken(dec)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		switch key {
 		case "products":
@@ -84,11 +98,16 @@ func AttachSavingsPlans(r io.Reader, insts []Instance) error {
 						return nil
 					}
 					for _, rt := range t.Rates {
-						if rt.Service != "AmazonEC2" {
-							continue
-						}
 						h, err := strconv.ParseFloat(rt.Rate.Price, 64)
 						if err != nil {
+							continue
+						}
+						if spServices[rt.Service] && pl.kind == "c" {
+							u := strings.TrimPrefix(rt.UsageType, prefix+"-")
+							other[u] = append(other[u], SPRate{Kind: pl.kind, Term: pl.years, Pay: pl.pay, Hourly: h})
+							continue
+						}
+						if rt.Service != "AmazonEC2" {
 							continue
 						}
 						for _, i := range byKey[rt.UsageType+"|"+rt.Operation] {
@@ -102,13 +121,19 @@ func AttachSavingsPlans(r io.Reader, insts []Instance) error {
 			err = skipValue(dec)
 		}
 		if err != nil {
-			return fmt.Errorf("savings plans %s: %w", key, err)
+			return nil, fmt.Errorf("savings plans %s: %w", key, err)
 		}
 	}
 	for i := range insts {
 		sortSP(insts[i].SP)
 	}
-	return nil
+	out := make([]UsageSP, 0, len(other))
+	for u, sp := range other {
+		sortSP(sp)
+		out = append(out, UsageSP{Usage: u, SP: sp})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Usage < out[j].Usage })
+	return out, nil
 }
 
 func sortSP(sp []SPRate) {

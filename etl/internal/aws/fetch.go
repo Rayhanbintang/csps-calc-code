@@ -71,16 +71,22 @@ func FetchRegion(ctx context.Context, region string, write Write) (*Region, erro
 	if err != nil {
 		return nil, err
 	}
+	var usageSP []UsageSP
 	if spIndex != "" {
-		err = httpx.Stream(ctx, host+spIndex, nil, func(r io.Reader) error {
+		err = httpx.Stream(ctx, host+spIndex, nil, func(r io.Reader) (err error) {
 			for i := range ec2.Instances {
 				ec2.Instances[i].SP = nil // a retried stream starts clean
 			}
-			return AttachSavingsPlans(r, ec2.Instances)
+			usageSP, err = AttachSavingsPlans(r, ec2.Instances, ec2.Prefix)
+			return err
 		})
 		if err != nil {
 			return nil, fmt.Errorf("savings plans: %w", err)
 		}
+	}
+	// Compute Savings Plan rates for Fargate and Lambda, by usage type.
+	if err := write(region+"/sp.json", usageSP); err != nil {
+		return nil, err
 	}
 
 	if err := write(region+"/ec2.json", ec2.Instances); err != nil {
