@@ -46,23 +46,40 @@ async function awsDisk(ctx: Ctx, item: Item): Promise<Priced> {
   return priced(lines, { sku: `EBS ${kind}`, notes });
 }
 
+// The three free-tier US regions (us-central1, us-east1, us-west1) and some others sell
+// Persistent Disk under one shared SKU whose name drops the " in <city>" ending.
+const anyRegion = '( in .+)?$';
+
 async function gcpDisk(ctx: Ctx, item: Item): Promise<Priced> {
   const rows = await gcp.region(ctx.region);
   const gb = num(item.spec, 'gb', 100) * item.qty;
   const kind = str(item.spec, 'gcp.disk') || ({ ssd: 'pd-balanced', 'ssd-fast': 'pd-ssd', hdd: 'pd-standard', 'hdd-cold': 'pd-standard' } as Record<string, string>)[str(item.spec, 'type', 'ssd')];
   const desc: Record<string, RegExp> = {
-    'pd-balanced': /^Balanced PD Capacity in /, 'pd-ssd': /^SSD backed PD Capacity in /, 'pd-standard': /^Storage PD Capacity in /,
+    'pd-balanced': new RegExp(`^Balanced PD Capacity${anyRegion}`),
+    'pd-ssd': new RegExp(`^SSD backed PD Capacity${anyRegion}`),
+    'pd-standard': new RegExp(`^Storage PD Capacity${anyRegion}`),
     'hyperdisk-balanced': /^Hyperdisk Balanced Capacity in /,
+    'hyperdisk-extreme': /^Hyperdisk Extreme Capacity in /,
+    'hyperdisk-throughput': /^Hyperdisk Throughput Capacity in /,
+    'hyperdisk-ml': /^Hyperdisk ML Capacity in /,
   };
+  if (!desc[kind]) return unavailable(`Unknown disk type ${kind}.`);
   const lines: Line[] = [line(`${kind} capacity`, gb, 'GiB-month', must(gcpRate(gcpFind(rows, desc[kind])), kind))];
   const notes: string[] = [];
+  const iops = num(item.spec, 'iops', 3000) * item.qty;
+  const mbps = num(item.spec, 'mbps', 140) * item.qty;
   if (kind === 'hyperdisk-balanced') {
-    const iops = Math.max(0, num(item.spec, 'iops', 3000) - 3000) * item.qty;
-    const mbps = Math.max(0, num(item.spec, 'mbps', 140) - 140) * item.qty;
-    if (iops) lines.push(line('IOPS above 3,000', iops, 'IOPS-month', must(gcpRate(gcpFind(rows, /^Hyperdisk Balanced IOPS in /)), 'Hyperdisk IOPS')));
-    if (mbps) lines.push(line('Throughput above 140 MB/s', mbps, 'MBps-month', must(gcpRate(gcpFind(rows, /^Hyperdisk Balanced Throughput in /)), 'Hyperdisk throughput')));
+    const xi = Math.max(0, num(item.spec, 'iops', 3000) - 3000) * item.qty;
+    const xm = Math.max(0, num(item.spec, 'mbps', 140) - 140) * item.qty;
+    if (xi) lines.push(line('IOPS above 3,000', xi, 'IOPS-month', must(gcpRate(gcpFind(rows, /^Hyperdisk Balanced IOPS in /)), 'Hyperdisk IOPS')));
+    if (xm) lines.push(line('Throughput above 140 MB/s', xm, 'MBps-month', must(gcpRate(gcpFind(rows, /^Hyperdisk Balanced Throughput in /)), 'Hyperdisk throughput')));
     notes.push('Hyperdisk Balanced includes 3,000 IOPS and 140 MB/s.');
   }
+  // Extreme bills every provisioned IOPS; Throughput and ML bill every provisioned MB/s.
+  if (kind === 'hyperdisk-extreme' && iops) lines.push(line('Provisioned IOPS', iops, 'IOPS-month', must(gcpRate(gcpFind(rows, /^Hyperdisk Extreme IOPS in /)), 'Hyperdisk Extreme IOPS')));
+  if (kind === 'hyperdisk-throughput' && mbps) lines.push(line('Provisioned throughput', mbps, 'MBps-month', must(gcpRate(gcpFind(rows, /^Hyperdisk Throughput Throughput in /)), 'Hyperdisk Throughput throughput')));
+  if (kind === 'hyperdisk-ml' && mbps) lines.push(line('Provisioned throughput', mbps, 'MBps-month', must(gcpRate(gcpFind(rows, /^Hyperdisk ML Throughput in /)), 'Hyperdisk ML throughput')));
+  if (kind === 'pd-standard') notes.push('The free tier (30 GB of pd-standard in us-central1, us-east1 and us-west1) is not applied.');
   return priced(lines, { sku: kind, notes });
 }
 
@@ -96,7 +113,7 @@ export const disk: Service = {
     },
     gcp: {
       product: 'Persistent Disk',
-      fields: async () => [{ key: 'gcp.disk', label: 'Disk type', type: 'select', options: opts(['', 'Match the disk class'], ['pd-balanced', 'pd-balanced'], ['pd-ssd', 'pd-ssd'], ['pd-standard', 'pd-standard'], ['hyperdisk-balanced', 'Hyperdisk Balanced']) }],
+      fields: async () => [{ key: 'gcp.disk', label: 'Disk type', type: 'select', options: opts(['', 'Match the disk class'], ['pd-balanced', 'pd-balanced'], ['pd-ssd', 'pd-ssd'], ['pd-standard', 'pd-standard'], ['hyperdisk-balanced', 'Hyperdisk Balanced'], ['hyperdisk-extreme', 'Hyperdisk Extreme'], ['hyperdisk-throughput', 'Hyperdisk Throughput'], ['hyperdisk-ml', 'Hyperdisk ML']) }],
       price: gcpDisk,
     },
     oci: {
@@ -210,10 +227,29 @@ async function awsFile(ctx: Ctx, item: Item): Promise<Priced> {
 async function gcpFile(ctx: Ctx, item: Item): Promise<Priced> {
   const rows = await gcp.region(ctx.region);
   const gb = Math.max(num(item.spec, 'gb', 1024), 0) * item.qty;
-  const ssd = str(item.spec, 'tier', 'standard') === 'performance';
-  const re = ssd ? /^Filestore Capacity Basic SSD \(Premium\) / : /^Filestore Capacity Basic HDD \(Standard\) /;
-  const notes = ['Filestore Basic has a 1 TiB minimum per instance (2.5 TiB for SSD).'];
-  return priced([line(`Filestore ${ssd ? 'Basic SSD' : 'Basic HDD'} capacity`, gb, 'GiB-month', must(gcpRate(gcpFind(rows, re)), 'Filestore capacity'))], { sku: 'Filestore Basic', notes });
+  const tier = str(item.spec, 'gcp.filestore') || (str(item.spec, 'tier', 'standard') === 'performance' ? 'basic-ssd' : 'basic-hdd');
+  const notes = ['Filestore bills the capacity provisioned, not the data stored.'];
+  if (tier === 'basic-hdd' || tier === 'basic-ssd') {
+    const ssd = tier === 'basic-ssd';
+    const re = ssd ? /^Filestore Capacity Basic SSD \(Premium\) / : /^Filestore Capacity Basic HDD \(Standard\) /;
+    notes.push('Filestore Basic has a 1 TiB minimum per instance (2.5 TiB for SSD).');
+    return priced([line(`Filestore ${ssd ? 'Basic SSD' : 'Basic HDD'} capacity`, gb, 'GiB-month', must(gcpRate(gcpFind(rows, re)), 'Filestore capacity'))], { sku: `Filestore ${ssd ? 'Basic SSD' : 'Basic HDD'}`, notes });
+  }
+  if (tier !== 'zonal' && tier !== 'regional') return unavailable(`Unknown Filestore tier ${tier}.`);
+  const Z = tier === 'zonal' ? 'Zonal' : 'Regional';
+  const iops = num(item.spec, 'gcp.iops', 0);
+  notes.push(`Filestore ${Z} has a 1 TiB minimum per instance.`);
+  if (!iops) {
+    // Without custom performance the GiB price includes the default IOPS.
+    const re = tier === 'zonal' ? /^Filestore Capacity Zonal and High Scale / : /^Filestore Capacity Regional and Enterprise /;
+    return priced([line(`Filestore ${Z} capacity`, gb, 'GiB-month', must(gcpRate(gcpFind(rows, re)), `Filestore ${Z} capacity`))], { sku: `Filestore ${Z}`, notes });
+  }
+  // Custom performance: an instance fee, a lower GiB price and each provisioned IOPS.
+  return priced([
+    line(`Filestore ${Z} instance`, item.qty, 'instance-months', must(gcpRate(gcpFind(rows, new RegExp(`^Filestore Instance Count ${Z} `))), `Filestore ${Z} instance`)),
+    line(`Filestore ${Z} capacity`, gb, 'GiB-month', must(gcpRate(gcpFind(rows, new RegExp(`^Filestore Instance Capacity ${Z} `))), `Filestore ${Z} capacity`)),
+    line('Provisioned IOPS', iops * item.qty, 'IOPS-month', must(gcpRate(gcpFind(rows, new RegExp(`^Filestore Instance IOPS ${Z} `))), `Filestore ${Z} IOPS`)),
+  ], { sku: `Filestore ${Z}, custom performance`, notes });
 }
 
 async function ociFile(_ctx: Ctx, item: Item): Promise<Priced> {
@@ -234,7 +270,16 @@ export const file: Service = {
   ],
   providers: {
     aws: { product: 'Amazon EFS', price: awsFile },
-    gcp: { product: 'Filestore', price: gcpFile },
+    gcp: {
+      product: 'Filestore',
+      fields: async (_ctx, spec) => [
+        { key: 'gcp.filestore', label: 'Filestore tier', type: 'select', options: opts(['', 'Match the tier'], ['basic-hdd', 'Basic HDD'], ['basic-ssd', 'Basic SSD'], ['zonal', 'Zonal'], ['regional', 'Regional']) },
+        ...(['zonal', 'regional'].includes(String(spec['gcp.filestore'] ?? ''))
+          ? [{ key: 'gcp.iops', label: 'Custom performance IOPS', type: 'number' as const, min: 0, step: 1000, help: '0 = default performance, priced per GiB.' }]
+          : []),
+      ],
+      price: gcpFile,
+    },
     oci: { product: 'OCI File Storage', price: ociFile },
   },
 };

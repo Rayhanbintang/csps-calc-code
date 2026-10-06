@@ -182,7 +182,8 @@ export const queue: Service = {
         const rows = await aws.rows(ctx.region, 'sqs');
         const fifo = str(item.spec, 'type') === 'fifo';
         const req = num(item.spec, 'requests', 0) * item.qty * Math.ceil(num(item.spec, 'kb', 4) / 64);
-        return priced([tierLine(`${fifo ? 'FIFO' : 'Standard'} requests (64 KB chunks)`, req, 'requests', must(awsCost(awsFind(rows, fifo ? 'Requests-FIFO-Tier1' : 'Requests-Tier1'), req), 'SQS requests'))], {
+        // us-east-1 names its request rows -RBP; the other regions name them -Tier1.
+        return priced([tierLine(`${fifo ? 'FIFO' : 'Standard'} requests (64 KB chunks)`, req, 'requests', must(awsCost(awsFind(rows, fifo ? 'Requests-FIFO-Tier1' : 'Requests-Tier1') ?? awsFind(rows, fifo ? 'Requests-FIFO-RBP' : 'Requests-RBP'), req), 'SQS requests'))], {
           sku: `SQS ${fifo ? 'FIFO' : 'Standard'}`, notes: ['The first 1M requests a month are free per account; not applied.'],
         });
       },
@@ -304,12 +305,20 @@ export const monitoring: Service = {
         const g = await gcp.global();
         const q = item.qty;
         const mib = (num(item.spec, 'metrics', 0) * POINTS * 8 * q) / 1024 ** 2;
-        const l = num(item.spec, 'logs', 0) * q, s = num(item.spec, 'stored', 0) * q;
-        return priced([
+        const l = num(item.spec, 'logs', 0) * q, s = num(item.spec, 'stored', 0) * q, a = num(item.spec, 'alarms', 0) * q;
+        // Google starts charging for alerting policies on 1 Sep 2027 (cloud.google.com/products/observability/pricing):
+        // $0.35 a month per metric reference, plus $0.50 per million points the conditions read.
+        const lines = [
           tierLine('Custom metric volume (first 150 MiB free)', mib, 'MiB', must(gcpCost(gcpFind(g, /^Metric Volume$/, 'OnDemand', 'monitoring'), mib), 'metric volume')),
           tierLine('Logs ingested (first 50 GiB free)', l, 'GiB', must(gcpCost(gcpFind(g, /^Log Storage cost$/, 'OnDemand', 'logging'), l), 'log ingestion')),
           line('Logs kept past 30 days', s, 'GiB-month', must(gcpRate(gcpFind(g, /^Log Retention cost$/, 'OnDemand', 'logging')), 'log retention')),
-        ], { sku: 'Cloud Monitoring + Cloud Logging', notes: ['Metric volume assumes one point a minute, 8 bytes each. Alerting conditions are billed separately; not included.'] });
+        ];
+        const notes = ['Metric volume assumes one point a minute, 8 bytes each.'];
+        if (a) {
+          lines.push(line('Alerting policies (no charge until 1 Sep 2027)', a, 'policies', 0));
+          notes.push(`From 1 Sep 2027 Google charges $0.35 a month per metric in an alerting policy: about $${(a * 0.35).toFixed(2)} a month for ${a} single-metric policies, plus $0.50 per million points read.`);
+        }
+        return priced(lines, { sku: 'Cloud Monitoring + Cloud Logging', notes });
       },
     },
     oci: {
