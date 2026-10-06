@@ -101,6 +101,8 @@
       </div>
       {#if item.check}<div class="flag small">⚑ {item.check}</div>{/if}
     </div>
+    <button class="ghost copy" aria-label="Copy {item.name || svc?.label}" title="Copy this card"
+      onclick={(e) => { e.stopPropagation(); app.copy = { kind: 'item', id: item.id }; }}>⧉</button>
     <div class="cost num">
       {#if p}{money(p.monthly)}{:else}<span class="muted">…</span>{/if}
       {#if p?.upfront}<div class="small muted">+{money(p.upfront)} once</div>{/if}
@@ -141,7 +143,7 @@
   .card {
     position: relative;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     gap: 8px;
     align-items: start;
     background: var(--panel);
@@ -202,6 +204,13 @@
   .err { color: var(--danger); }
   .flag { color: var(--text); margin-top: 3px; }
   .cost { font-weight: 700; }
+  .copy { padding: 0 4px; border: 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
+  .copy:hover { color: var(--accent); }
+  /* With a mouse the copy button shows on hover; on touch it always shows. */
+  @media (hover: hover) {
+    .copy { opacity: 0; }
+    .card:hover .copy, .copy:focus-visible { opacity: 1; }
+  }
   .subtotal { color: var(--accent); font-weight: 600; cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
   /* Levels alternate between a dark and a light well; the rail takes the container's colour. */
   .inside {

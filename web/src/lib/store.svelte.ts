@@ -10,7 +10,8 @@ import { readSheet } from './xlsxread';
 import { SHEET, parseTemplate } from './awsimport';
 import type { ImportResult } from './awsimport';
 import { syncVmSize } from './catalog/vm';
-import { freeBoxSpot, freeSpot } from './board.svelte';
+import { boxWidth, freeBoxSpot, freeSpot } from './board.svelte';
+import { cloneAccount, cloneBox, cloneItem, copyLabel } from './copy';
 
 const DRAFT_KEY = 'csps-calc:draft'; // before tabs: one estimate
 const TABS_KEY = 'csps-calc:tabs';
@@ -107,6 +108,8 @@ export const app = $state({
   ticked: [] as string[],
   view: 'canvas' as 'canvas' | 'review',
   busy: 0,
+  /** The copy dialog: what is being copied. */
+  copy: null as { kind: 'item' | 'box' | 'site'; id: string } | null,
 });
 
 export const prices = new SvelteMap<string, Priced>();
@@ -275,16 +278,34 @@ export function addItem(boxId: string, svcId: string, spec?: Item['spec'], paren
   app.selected = item.id;
 }
 
-function cloneTree(item: Item): Item {
-  return { ...item, id: uid(), children: item.children?.map(cloneTree) };
+/** Copies a card next to itself, alone or with what is inside it, at `f` times the size. */
+export function copyItem(itemId: string, withInside: boolean, f = 1): void {
+  const found = find(itemId);
+  if (!found) return;
+  const copy = cloneItem($state.snapshot(found.item) as Item, withInside, f, found.parent?.svc ?? null);
+  found.list.splice(found.list.indexOf(found.item) + 1, 0, copy);
+  app.selected = copy.id;
 }
 
-export function duplicateItem(itemId: string): void {
-  const f = find(itemId);
-  if (!f) return;
-  const copy = cloneTree($state.snapshot(f.item) as Item);
-  f.list.splice(f.list.indexOf(f.item) + 1, 0, copy);
-  app.selected = copy.id;
+/** Copies a region box into the same site, to the right of its boxes. */
+export function copyBox(boxId: string, f = 1): void {
+  const found = findBox(boxId);
+  if (!found) return;
+  const copy = cloneBox($state.snapshot(found.box) as RegionBox, f);
+  copy.at = { ...freeBoxSpot(found.acc), w: boxWidth(found.box) };
+  delete copy.swap;
+  found.acc.regions.push(copy);
+}
+
+/** Copies a whole site to a free spot on the right of the board. */
+export function copySite(accId: string, f = 1): void {
+  const acc = app.est.accounts.find((a) => a.id === accId);
+  if (!acc) return;
+  const copy = cloneAccount($state.snapshot(acc) as Account, f);
+  copy.label = copyLabel(acc.label, f);
+  copy.ref = undefined;
+  copy.at = freeSpot(app.est);
+  app.est.accounts.push(copy);
 }
 
 export function removeItem(itemId: string): void {

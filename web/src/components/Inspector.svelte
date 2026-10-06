@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Priced, Pricing } from '../lib/types';
-  import { app, prices, find, duplicateItem, removeItem, priceVariant } from '../lib/store.svelte';
+  import { app, prices, find, removeItem, priceVariant } from '../lib/store.svelte';
   import { service } from '../lib/catalog';
   import type { Field } from '../lib/catalog';
   import { afterEdit, ctxFor, effectiveMonthly, modelChoices, providerNames, samePricing } from '../lib/engine';
@@ -196,7 +196,7 @@
     </section>
 
     <div class="foot">
-      <button onclick={() => duplicateItem(itemId)}>Duplicate</button>
+      <button onclick={() => (app.copy = { kind: 'item', id: itemId })}>Copy…</button>
       <button class="danger" onclick={() => removeItem(itemId)}>Delete</button>
     </div>
   </div>

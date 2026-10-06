@@ -13,6 +13,7 @@
   import Reminders from './Reminders.svelte';
   import Footer from './Footer.svelte';
   import DragGhost from './DragGhost.svelte';
+  import CopyDialog from './CopyDialog.svelte';
 
   // Price again and keep the draft whenever the estimate or the price list changes.
   // The pricing run itself is untracked: it reads and writes state (prices, the busy
@@ -89,6 +90,7 @@
 <svelte:window onkeydown={onKey} />
 
 <DragGhost />
+<CopyDialog />
 
 <div class="shell">
   <Header />

@@ -183,6 +183,7 @@
           {#if acc.provider !== 'onprem'}
             <button class="small" onclick={() => addRegion(acc.id)}>+ Region</button>
           {/if}
+          <button class="ghost small" aria-label="Copy {acc.label}" title="Copy this site" onclick={() => (app.copy = { kind: 'site', id: acc.id })}>⧉</button>
           <button class="ghost small" aria-label="Remove {acc.label}" title="Remove this {k.kind.toLowerCase()}" onclick={() => { if (confirm(`Remove ${acc.label || 'this site'} and everything in it?`)) removeAccount(acc.id); }}>✕</button>
         </div>
       </header>
@@ -223,6 +224,7 @@
               {/if}
               <input class="boxlabel" bind:value={box.label} placeholder="Note (optional)" maxlength="60" aria-label="Box note" />
               <span class="num small">{money(bt.monthly)}</span>
+              <button class="ghost small" aria-label="Copy region box" title="Copy this region box" onclick={() => (app.copy = { kind: 'box', id: box.id })}>⧉</button>
               {#if acc.regions.length > 1}
                 <button class="ghost small" aria-label="Remove region box" onclick={() => removeRegion(box.id)}>✕</button>
               {/if}
