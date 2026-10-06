@@ -135,7 +135,7 @@ export const lb: Service = {
         return priced([
           tierLine('Flexible Load Balancer base', hours, 'hours', must(ociCost(ociPart(rows, 'B93030'), hours), 'LB base')),
           tierLine(`Bandwidth, ${mbps} Mbps`, mbps * hours, 'Mbps-hours', must(ociCost(ociPart(rows, 'B93031'), mbps * hours), 'LB bandwidth')),
-        ], { sku: `Flexible Load Balancer · ${mbps} Mbps`, notes: ['Includes the free allowance of one 10 Mbps load balancer per tenancy.'] });
+        ], { sku: `Flexible Load Balancer · ${mbps} Mbps` });
       },
     },
   },
@@ -308,7 +308,7 @@ export const egress: Service = {
         const to = str(item.spec, 'to', 'internet');
         if (to === 'internet') {
           return priced([tierLine('Data transfer out to the internet', gb, 'GB', must(awsCost(awsFind(rows, 'DataTransfer-Out-Bytes'), gb), 'internet data transfer'))], {
-            sku: 'Data transfer out', notes: ['The 100 GB a month AWS free allowance is not applied.'],
+            sku: 'Data transfer out',
           });
         }
         const dest = ctx.regions.find((r) => r.code === to);

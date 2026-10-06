@@ -184,7 +184,7 @@ export const queue: Service = {
         const req = num(item.spec, 'requests', 0) * item.qty * Math.ceil(num(item.spec, 'kb', 4) / 64);
         // us-east-1 names its request rows -RBP; the other regions name them -Tier1.
         return priced([tierLine(`${fifo ? 'FIFO' : 'Standard'} requests (64 KB chunks)`, req, 'requests', must(awsCost(awsFind(rows, fifo ? 'Requests-FIFO-Tier1' : 'Requests-Tier1') ?? awsFind(rows, fifo ? 'Requests-FIFO-RBP' : 'Requests-RBP'), req), 'SQS requests'))], {
-          sku: `SQS ${fifo ? 'FIFO' : 'Standard'}`, notes: ['The first 1M requests a month are free per account; not applied.'],
+          sku: `SQS ${fifo ? 'FIFO' : 'Standard'}`,
         });
       },
     },
@@ -296,7 +296,7 @@ export const monitoring: Service = {
           line('Standard alarms', a, 'alarms', must(awsRate(awsFind(rows, 'CW:AlarmMonitorUsage')), 'alarms')),
           line('Logs ingested', l, 'GB', must(awsRate(awsFind(rows, 'DataProcessing-Bytes', 'PutLogEvents')), 'log ingestion')),
           line('Logs stored', s, 'GB-month', must(awsRate(awsFind(rows, 'TimedStorage-ByteHrs')), 'log storage')),
-        ], { sku: 'CloudWatch', notes: ['The CloudWatch free tier (10 metrics, 10 alarms, 5 GB logs) is not applied.'] });
+        ], { sku: 'CloudWatch' });
       },
     },
     gcp: {

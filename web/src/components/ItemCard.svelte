@@ -6,6 +6,8 @@
   import { money } from '../lib/report';
   import { QUICK, isContainer, subtotal } from '../lib/tree';
   import { drag, press } from '../lib/drag.svelte';
+  import { zonesOf } from '../lib/zones';
+  import { freeTier, freeTierText, NEW_ACCOUNT } from '../lib/freetier';
 
   let {
     item,
@@ -37,6 +39,9 @@
   const total = $derived(kids.length ? subtotal(item, (id) => prices.get(id)) : undefined);
   const effective = $derived(item.qty * mult);
   const quick = $derived(QUICK[item.svc] ?? []);
+  const zones = $derived(zonesOf(item, provider));
+  const ft = $derived(freeTier(item.svc, provider));
+  let ftOpen = $state(false);
 
   // Where a drag would land, read from the drag engine: a bar before or after this card,
   // or the inside area lit up (or refused).
@@ -90,6 +95,7 @@
           </button>
         {/if}
         <span class="ktag">{kind[0]}</span>
+        {#if zones}<span class="az {zones.kind}" title={zones.title}>{zones.label}</span>{/if}
         {#if item.qty > 1}<span class="qty">{item.qty}×</span>{/if}
         {item.name || svc?.label}
         {#if mult > 1}<span class="mult" title="Count inside its containers">= {effective} in total</span>{/if}
@@ -100,10 +106,23 @@
         {#if item.folded && kids.length}<span> · {kids.length} inside</span>{/if}
       </div>
       {#if item.check}<div class="flag small">⚑ {item.check}</div>{/if}
+      {#if ft && ftOpen}
+        <div class="ftbox small" role="note">
+          <strong>Free tier.</strong> {ft.text}
+          <span class="ftin {ft.inPrice}">{ft.inPrice === 'yes' ? 'Already in this price.' : ft.inPrice === 'no' ? 'Not taken off this price.' : 'Partly in this price.'}</span>
+          {#if ft.detail}{ft.detail}{/if}
+          {#if NEW_ACCOUNT[provider]}<div class="muted">{NEW_ACCOUNT[provider]!.text}</div>{/if}
+          <a href={ft.src} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>Source</a>
+        </div>
+      {/if}
     </div>
     <button class="ghost copy" aria-label="Copy {item.name || svc?.label}" title="Copy this card"
       onclick={(e) => { e.stopPropagation(); app.copy = { kind: 'item', id: item.id }; }}>⧉</button>
     <div class="cost num">
+      {#if ft}
+        <button class="ghost ft" class:on={ftOpen} aria-expanded={ftOpen} aria-label="Free tier" title={freeTierText(item.svc, provider)}
+          onclick={(e) => { e.stopPropagation(); ftOpen = !ftOpen; }}>ⓘ</button>
+      {/if}
       {#if p}{money(p.monthly)}{:else}<span class="muted">…</span>{/if}
       {#if p?.upfront}<div class="small muted">+{money(p.upfront)} once</div>{/if}
       {#if total}<div class="small subtotal" title="Total per month of this card plus everything inside it">{money(total.monthly)}</div>{/if}
@@ -204,6 +223,19 @@
   .err { color: var(--danger); }
   .flag { color: var(--text); margin-top: 3px; }
   .cost { font-weight: 700; }
+  .az {
+    font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 999px; line-height: 16px;
+    border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+  }
+  .az.multi { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+  .az.regional, .az.global { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .az.single { border-style: dashed; }
+  .ft { padding: 0 3px; border: 0; color: var(--muted); font-size: 13px; font-weight: 400; vertical-align: 1px; }
+  .ft:hover, .ft.on { color: var(--accent); }
+  .ftbox { margin-top: 5px; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); font-weight: 400; display: grid; gap: 3px; }
+  .ftin { font-weight: 600; }
+  .ftin.yes { color: var(--ok); }
+  .ftin.no { color: var(--text); }
   .copy { padding: 0 4px; border: 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
   .copy:hover { color: var(--accent); }
   /* With a mouse the copy button shows on hover; on touch it always shows. */

@@ -38,7 +38,7 @@ export const k8s: Service = {
         const ext = str(item.spec, 'support') === 'extended';
         const r = gcpFind(g, ext ? /^Extended Period Kubernetes Clusters$/ : /^Regional Kubernetes Clusters$/, 'OnDemand', 'gke');
         return priced([line(`GKE Standard cluster${ext ? ', extended period' : ''}`, H * item.qty, 'cluster-hours', must(gcpRate(r), 'GKE cluster'))], {
-          sku: 'GKE Standard', notes: ['Google gives each billing account a monthly credit that covers one zonal or Autopilot cluster; not applied here.'],
+          sku: 'GKE Standard',
         });
       },
     },
@@ -100,7 +100,7 @@ export const functions: Service = {
           line('Requests', req, 'requests', must(awsRate(awsFind(rows, arm ? 'Request-ARM' : 'Request')), 'Lambda requests')),
           tierLine('Compute', gbs, 'GB-seconds', must(awsCost(awsFind(rows, arm ? 'Lambda-GB-Second-ARM' : 'Lambda-GB-Second'), gbs), 'Lambda compute')),
         ];
-        return priced(lines, { sku: `Lambda ${arm ? 'Arm' : 'x86'}`, notes: ['The AWS free tier (1M requests, 400,000 GB-seconds a month) is not applied.'] });
+        return priced(lines, { sku: `Lambda ${arm ? 'Arm' : 'x86'}` });
       },
     },
     gcp: {

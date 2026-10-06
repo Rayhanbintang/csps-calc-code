@@ -6,6 +6,7 @@ import { awsCommitted } from './vm';
 import {
   H, awsFind, awsRate, gcpFind, gcpRate, line, must, num, ociPart, ociRate, opts, priced, str, unavailable,
 } from './util';
+import { zonesField } from '../zones';
 import type { Ctx, Field, Service } from './util';
 
 const engines = opts(
@@ -295,6 +296,7 @@ export const cache: Service = {
     { key: 'engine', label: 'Engine', type: 'select', options: opts(['valkey', 'Valkey'], ['redis', 'Redis OSS']) },
     { key: 'gb', label: 'Memory per node', type: 'number', unit: 'GB', min: 1, step: 1 },
     { key: 'nodes', label: 'Nodes (primary + replicas)', type: 'number', min: 1, step: 1 },
+    zonesField,
   ],
   providers: {
     aws: {

@@ -79,7 +79,6 @@ async function gcpDisk(ctx: Ctx, item: Item): Promise<Priced> {
   if (kind === 'hyperdisk-extreme' && iops) lines.push(line('Provisioned IOPS', iops, 'IOPS-month', must(gcpRate(gcpFind(rows, /^Hyperdisk Extreme IOPS in /)), 'Hyperdisk Extreme IOPS')));
   if (kind === 'hyperdisk-throughput' && mbps) lines.push(line('Provisioned throughput', mbps, 'MBps-month', must(gcpRate(gcpFind(rows, /^Hyperdisk Throughput Throughput in /)), 'Hyperdisk Throughput throughput')));
   if (kind === 'hyperdisk-ml' && mbps) lines.push(line('Provisioned throughput', mbps, 'MBps-month', must(gcpRate(gcpFind(rows, /^Hyperdisk ML Throughput in /)), 'Hyperdisk ML throughput')));
-  if (kind === 'pd-standard') notes.push('The free tier (30 GB of pd-standard in us-central1, us-east1 and us-west1) is not applied.');
   return priced(lines, { sku: kind, notes });
 }
 

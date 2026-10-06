@@ -5,6 +5,7 @@ import type { AwsInstance, GcpRow, OciRow } from '../prices';
 import {
   H, line, must, num, ociPart, ociRate, ociCost, opts, priced, str, tierLine, unavailable, gcpFind, gcpRate, escapeRe,
 } from './util';
+import { zonesField } from '../zones';
 import type { Ctx, Field, Service } from './util';
 
 // ---- neutral spec ----
@@ -339,7 +340,6 @@ async function ociVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
     tierLine(`${shape.name} OCPU (${o} OCPU = ${shape.arch === 'arm' ? o : o * 2} vCPU)`, ocpuHours, 'OCPU-hours', must(ociCost(ocpuRow, ocpuHours), 'OCPU')),
     tierLine(`${shape.name} memory`, memHours, 'GB-hours', must(ociCost(memRow, memHours), 'memory')),
   ];
-  if (shape.arch === 'arm' && (ocpuRow?.t[0][2] ?? 1) === 0) notes.push('Includes the Ampere A1 free allowance; it applies once per tenancy.');
   if (os === 'windows' && !byol(item.spec)) {
     lines.push(line('Windows Server licence', ocpuHours, 'OCPU-hours', must(ociRate(ociPart(rows, 'B88318')), 'Windows licence')));
   }
@@ -391,6 +391,7 @@ export const vm: Service = {
     { key: 'sw', label: 'Database licence', type: 'select', options: swOptions },
     { key: 'licence', label: 'Licence', type: 'select', options: opts(['included', 'Included in price'], ['byol', 'Bring your own']) },
     { key: 'hours', label: 'Running hours', type: 'number', unit: 'h / month', min: 0, step: 1, help: '730 = always on' },
+    zonesField,
   ],
   providers: {
     aws: {
