@@ -338,6 +338,7 @@ export function copyItem(itemId: string, withInside: boolean, f = 1): void {
   const found = find(itemId);
   if (!found) return;
   const copy = cloneItem($state.snapshot(found.item) as Item, withInside, f, found.parent?.svc ?? null);
+  delete copy.at; // stacks below the placed cards instead of covering the original
   found.list.splice(found.list.indexOf(found.item) + 1, 0, copy);
   app.selected = copy.id;
 }
@@ -407,6 +408,8 @@ export async function moveItems(itemIds: string[], to: Target | string, index?: 
     if (from.list === again.list && old < pos) pos -= 1;
     // An add-on moved to another resource now serves that one.
     if (ADDONS.has(next.svc)) next.spec = { ...next.spec, on: again.parent?.svc ?? '' };
+    // A card placed by hand keeps its spot only within the same box; elsewhere it stacks.
+    if (again.list !== from.list) delete next.at;
     pos = Math.max(0, Math.min(pos, again.list.length));
     again.list.splice(pos, 0, next);
     if (at !== undefined) at = pos + 1; // keep a multi-item drop in order

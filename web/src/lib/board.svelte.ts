@@ -1,8 +1,8 @@
-// The board: a pan-and-zoom surface where site frames and region boxes sit where the SA
-// puts them, like a diagram tool. Cards inside a box still stack on their own, so nesting
-// and totals work as before.
+// The board: a pan-and-zoom surface where site frames, region boxes and the cards at the
+// top of each box sit where the SA puts them, like a diagram tool. What sits inside a card
+// (a VPC's VMs, a VM's disks) still stacks inside it, so nesting and totals work as before.
 import { tick } from 'svelte';
-import type { Account, At, Estimate, RegionBox } from './types';
+import type { Account, At, Estimate, Item, RegionBox } from './types';
 
 export const GRID = 16;
 export const BOX_W = 336;
@@ -34,9 +34,65 @@ export function zoomAt(cx: number, cy: number, z: number): void {
   view.y = cy - by * next;
 }
 
+/** Padding and border around the cards inside a box. */
+export const BOX_INSET = 18;
+export const CARD_GAP = 8;
+export const CARD_MIN_W = 208;
+
+/** Width of a box: as set, or by content, and never narrower than its rightmost card. */
 export function boxWidth(box: RegionBox): number {
-  if (box.at?.w) return box.at.w;
-  return box.items.some((i) => i.children?.length) ? BOX_W_WIDE : BOX_W;
+  const base = box.at?.w ?? (box.items.some((i) => i.children?.length) ? BOX_W_WIDE : BOX_W);
+  return box.items.reduce((m, i) => (i.at ? Math.max(m, i.at.x + (i.at.w ?? 0) + BOX_INSET) : m), base);
+}
+
+export interface Slot { x: number; y: number; w: number }
+
+/** Where each top-level card of a box sits. Placed cards keep their spot; the others
+ *  stack at the left, below every placed card they would overlap. `h` gives a card's
+ *  measured height. */
+export function layoutCards(items: Item[], inner: number, h: (id: string) => number): { slots: Map<string, Slot>; height: number } {
+  const slots = new Map<string, Slot>();
+  const taken: (Slot & { h: number })[] = [];
+  for (const it of items) {
+    if (!it.at) continue;
+    const s = { x: it.at.x, y: it.at.y, w: it.at.w ?? inner };
+    slots.set(it.id, s);
+    taken.push({ ...s, h: h(it.id) });
+  }
+  // Once the SA has placed cards, new ones take a card's usual width instead of
+  // stretching across a box that grew to hold cards side by side.
+  const w = taken.length ? Math.min(inner, BOX_W - BOX_INSET) : inner;
+  for (const it of items) {
+    if (it.at) continue;
+    const y = taken.filter((t) => t.x < w && t.x + t.w > 0).reduce((m, t) => Math.max(m, t.y + t.h + CARD_GAP), 0);
+    const s = { x: 0, y, w };
+    slots.set(it.id, s);
+    taken.push({ ...s, h: h(it.id) });
+  }
+  const height = taken.reduce((m, t) => Math.max(m, t.y + t.h), 0);
+  return { slots, height };
+}
+
+/** Gives every card of the box its current spot, so moving one leaves the others put. */
+export function freezeCards(items: Item[], slots: Map<string, Slot>): void {
+  for (const it of items) {
+    const s = slots.get(it.id);
+    if (!it.at && s) it.at = { x: s.x, y: s.y, w: s.w };
+  }
+}
+
+/** Moves a dropped card down until it overlaps no other card, then puts the cards in
+ *  reading order (top to bottom, left to right) so lists and exports follow the layout. */
+export function settleCards(items: Item[], id: string, h: (id: string) => number): void {
+  const me = items.find((i) => i.id === id);
+  if (!me?.at) return;
+  const others = items.filter((i) => i.id !== id && i.at);
+  const hit = () => others.find((o) => {
+    const a = me.at!, b = o.at!;
+    return a.x < b.x + (b.w ?? 0) && b.x < a.x + (a.w ?? 0) && a.y < b.y + h(o.id) && b.y < a.y + h(me.id);
+  });
+  for (let o = hit(), n = 0; o && n < 50; o = hit(), n++) me.at = { ...me.at!, y: snap(o.at!.y + h(o.id) + CARD_GAP + GRID / 2) };
+  items.sort((a, b) => (a.at?.y ?? Infinity) - (b.at?.y ?? Infinity) || (a.at?.x ?? 0) - (b.at?.x ?? 0));
 }
 
 /** Width of a site frame: room for its rightmost box. */
@@ -160,7 +216,10 @@ export async function focusItem(id: string): Promise<void> {
     await tick();
     r = el.getBoundingClientRect();
   }
-  const dx = (v.width - view.reserve) / 2 - (r.left + r.width / 2 - v.left);
+  // Centre the card in the part of the board not under the drawer; a card wider than
+  // that shows its left edge, where its name is.
+  const avail = v.width - view.reserve;
+  const dx = r.width > avail - 48 ? 24 - (r.left - v.left) : avail / 2 - (r.left + r.width / 2 - v.left);
   const dy = v.height / 2 - (r.top + r.height / 2 - v.top);
   const x0 = view.x, y0 = view.y, t0 = performance.now(), ms = 280;
   const step = (now: number) => {

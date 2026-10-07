@@ -63,6 +63,9 @@ export interface Item {
   children?: Item[];
   /** Folded on the canvas. */
   folded?: boolean;
+  /** Where a card sits inside its region box, and its width (board mode, top-level cards
+   *  only). Missing = stacked below the placed cards. */
+  at?: At & { w?: number };
 }
 
 export interface Pricing {

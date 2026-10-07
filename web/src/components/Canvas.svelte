@@ -12,7 +12,8 @@
   import type { Account } from '../lib/types';
   import { untrack } from 'svelte';
   import Board from './Board.svelte';
-  import { boxWidth, grab, grabWidth, needsPlace, place, siteWidth } from '../lib/board.svelte';
+  import { BOX_INSET, CARD_MIN_W, boxWidth, freezeCards, grab, grabWidth, layoutCards, needsPlace, place, settleCards, siteWidth, snap } from '../lib/board.svelte';
+  import type { Item, RegionBox } from '../lib/types';
 
   // Below 760 px the board turns back into a stacked list (reading a shared estimate on a phone).
   let wide = $state(typeof window === 'undefined' || window.matchMedia('(min-width: 761px)').matches);
@@ -40,6 +41,29 @@
   }
   /** The frame being moved sits above the others. */
   let lifted = $state('');
+
+  /** Measured height of each top-level card, for the free layout inside a box. */
+  let ih = $state<Record<string, number>>({});
+  const cardH = (id: string) => ih[id] ?? 56;
+  function layout(box: RegionBox) {
+    return layoutCards(box.items, boxWidth(box) - BOX_INSET, cardH);
+  }
+
+  /** Moves a card inside its box by its grip. The first move fixes every card of the box
+   *  where it stands, so only the card in hand moves. */
+  function moveCard(e: PointerEvent, box: RegionBox, item: Item) {
+    freezeCards(box.items, layout(box).slots);
+    lifted = item.id;
+    grab(e, () => item.at!, (at) => (item.at = { ...at, w: item.at?.w }), () => {
+      lifted = '';
+      settleCards(box.items, item.id, cardH);
+    });
+  }
+
+  function resizeCard(e: PointerEvent, box: RegionBox, item: Item) {
+    freezeCards(box.items, layout(box).slots);
+    grabWidth(e, () => item.at?.w ?? CARD_MIN_W, (w) => (item.at = { x: item.at?.x ?? 0, y: item.at?.y ?? 0, w: Math.max(CARD_MIN_W, snap(w)) }));
+  }
 
   /** The box a drag hovers over (only drops on the box itself, not on a card in it). */
   const over = $derived(drag.active && drag.target?.kind === 'box' && drag.target.ok ? drag.target.boxId : null);
@@ -250,10 +274,24 @@
             {#if box.folded}
               <div class="small muted folded">{[...walk(box.items)].length} items folded</div>
             {:else}
-            <div class="items">
+            {@const lay = free ? layout(box) : null}
+            <div class="items" class:free style:height={lay ? `${lay.height}px` : undefined}>
               {#each box.items as item, i (item.id)}
-                <ItemCard {item} provider={acc.provider} boxId={box.id} index={i} />
+                {#if lay}
+                  {@const s = lay.slots.get(item.id)!}
+                  <div class="slot" class:lifted={lifted === item.id} style:left="{s.x}px" style:top="{s.y}px" style:width="{s.w}px" bind:offsetHeight={ih[item.id]}>
+                    <button class="cgrip ghost" aria-label="Move this card in the box" title="Drag to place this card"
+                      onpointerdown={(e) => moveCard(e, box, item)}>⠿</button>
+                    <ItemCard {item} provider={acc.provider} boxId={box.id} index={i} />
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div class="cresize" title="Drag to change the card width" onpointerdown={(e) => resizeCard(e, box, item)}></div>
+                  </div>
+                {:else}
+                  <ItemCard {item} provider={acc.provider} boxId={box.id} index={i} />
+                {/if}
               {/each}
+            </div>
+            <div class="after">
               {#if acc.provider === 'onprem'}
                 <div class="quick"><button class="addq small" onclick={() => addItem(box.id, 'custom')}>+ Line item</button></div>
               {:else}
@@ -337,6 +375,21 @@
   .boxhead { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
   .boxlabel { flex: 1 1 80px; font-size: 12px; padding: 4px 6px; }
   .items { display: grid; gap: 6px; }
+  /* On the board, top-level cards sit where the SA puts them inside the box. */
+  .items.free { display: block; position: relative; margin-bottom: 6px; }
+  .slot { position: absolute; }
+  .slot.lifted { z-index: 4; }
+  .cgrip {
+    position: absolute; left: -9px; top: 6px; z-index: 2;
+    width: 14px; height: 22px; padding: 0; border: 0; border-radius: 4px;
+    color: var(--muted); cursor: grab; touch-action: none; font-size: 12px; line-height: 1;
+    opacity: 0; background: var(--panel);
+  }
+  .slot:hover > .cgrip, .cgrip:focus-visible, .slot.lifted > .cgrip { opacity: 1; }
+  .cgrip:hover { color: var(--accent); }
+  .cresize { position: absolute; top: 6px; bottom: 6px; right: -5px; width: 8px; cursor: ew-resize; touch-action: none; border-radius: 4px; }
+  .cresize:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  @media (hover: none) { .cgrip { opacity: 1; } }
   .drop { text-align: center; padding: 2px 4px 4px; }
   .quick { display: flex; flex-wrap: wrap; gap: 5px; padding-top: 2px; }
   .addq { padding: 3px 9px; font-size: 12px; border-style: dashed; background: transparent; color: var(--muted); }

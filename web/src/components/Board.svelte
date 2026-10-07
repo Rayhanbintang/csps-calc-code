@@ -42,7 +42,7 @@
   let pinch: { d: number; z: number } | null = null;
 
   function blocks(t: HTMLElement): boolean {
-    return !!t.closest('input, select, textarea, button, a, label, [role="separator"], .grip, .resize, .zoombar');
+    return !!t.closest('input, select, textarea, button, a, label, [role="separator"], .grip, .resize, .cresize, .zoombar');
   }
 
   function down(e: PointerEvent) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BOX_W, BOX_W_WIDE, GRID, SITE_GAP, SITE_PAD, freeSpot, needsPlace, place, siteWidth, snap } from './board.svelte';
-import type { Estimate } from './types';
+import { BOX_W, BOX_W_WIDE, GRID, SITE_GAP, SITE_PAD, boxWidth, freeSpot, layoutCards, needsPlace, place, settleCards, siteWidth, snap } from './board.svelte';
+import type { Estimate, Item } from './types';
 
 function est(): Estimate {
   return {
@@ -40,5 +40,30 @@ describe('board placement', () => {
     expect(e.accounts[1].at).toEqual({ x: 2000, y: 400 });
     // DRC: one plain box, 336 + 32 = 368 wide, so it ends at 2368; next spot 2368 + 48 = 2416.
     expect(freeSpot(e)).toEqual({ x: snap(2416), y: 0 });
+  });
+});
+
+describe('cards placed freely inside a box', () => {
+  const card = (id: string, at?: Item['at']): Item => ({ id, svc: 'vpc', qty: 1, spec: {}, at });
+  const h = () => 100;
+  it('cards without a spot stack at the left, full width, as before', () => {
+    const { slots, height } = layoutCards([card('a'), card('b')], 318, h);
+    expect(slots.get('a')).toEqual({ x: 0, y: 0, w: 318 });
+    expect(slots.get('b')).toEqual({ x: 0, y: 108, w: 318 });
+    expect(height).toBe(208);
+  });
+  it('two VPCs side by side; a new card stacks below them at the usual width', () => {
+    const items = [card('a', { x: 0, y: 0, w: 400 }), card('b', { x: 416, y: 0, w: 400 }), card('c')];
+    const { slots } = layoutCards(items, 816, h);
+    expect(slots.get('c')).toEqual({ x: 0, y: 108, w: 318 });
+  });
+  it('a dropped card that overlaps another moves below it, and order follows the layout', () => {
+    const items = [card('a', { x: 0, y: 0, w: 300 }), card('b', { x: 0, y: 200, w: 300 }), card('c', { x: 100, y: 40, w: 300 })];
+    settleCards(items, 'c', h);
+    expect(items.find((i) => i.id === 'c')!.at!.y).toBeGreaterThanOrEqual(308);
+    expect(items.map((i) => i.id)).toEqual(['a', 'b', 'c']);
+  });
+  it('a box is never narrower than its rightmost card', () => {
+    expect(boxWidth({ id: 'r', region: 'x', items: [card('a', { x: 416, y: 0, w: 400 })] })).toBe(416 + 400 + 18);
   });
 });
