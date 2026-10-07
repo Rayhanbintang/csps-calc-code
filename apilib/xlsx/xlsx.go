@@ -252,6 +252,9 @@ func Build(r *report.Report) ([]byte, error) {
 			}
 			s.add(cell{"", st.text}, cell{"", st.text}, cell{region, st.text}, cell{b.Monthly, st.money}, cell{b.Upfront, st.money}, cell{b.Monthly*12 + b.Upfront, st.money})
 		}
+		if a.Support != nil {
+			s.add(cell{"", st.text}, cell{"", st.text}, cell{"Support, " + a.Support.Plan, st.text}, cell{a.Support.Monthly, st.money}, cell{0.0, st.money}, cell{a.Support.Monthly * 12, st.money})
+		}
 	}
 	s.add()
 	s.add(cell{"Total per month", st.total}, nil_(), nil_(), cell{r.Monthly, st.totalMoney})
@@ -286,6 +289,10 @@ func Build(r *report.Report) ([]byte, error) {
 				}
 				ai.add(cell{a.Site(), st.text}, cell{a.ProviderName, st.text}, cell{b.RegionName, st.text}, cell{itemLabel(it), st.text}, cell{it.Service, st.text}, cell{it.Product, st.text}, cell{it.SKU, st.text}, cell{it.Qty, st.qty}, cell{it.Pricing, st.text}, cell{it.Monthly, st.money}, cell{it.Upfront, st.money}, cell{notes(it), noteStyle})
 			}
+		}
+		// Support is one line per site, so "All items" still sums to the total.
+		if a.Support != nil {
+			ai.add(cell{a.Site(), st.text}, cell{a.ProviderName, st.text}, cell{"", st.text}, cell{"Support plan", st.text}, cell{"Support", st.text}, cell{a.Support.Plan, st.text}, cell{"", st.text}, cell{1, st.qty}, cell{"Monthly", st.text}, cell{a.Support.Monthly, st.money}, cell{0.0, st.money}, cell{a.Support.Basis, st.text})
 		}
 	}
 	if err := ai.write(nil); err != nil {

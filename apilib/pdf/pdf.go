@@ -163,6 +163,15 @@ func Build(r *report.Report) ([]byte, error) {
 			d.CellFormat(cols[3], 6, money(b.Monthly*12+b.Upfront), "B", 0, "R", false, 0, "")
 			d.Ln(-1)
 		}
+		if a.Support != nil {
+			d.color(ink)
+			d.CellFormat(cols[0], 6, d.fit("      Support, "+a.Support.Plan, cols[0]-1), "B", 0, "L", false, 0, "")
+			d.draw(rule)
+			d.CellFormat(cols[1], 6, money(a.Support.Monthly), "B", 0, "R", false, 0, "")
+			d.CellFormat(cols[2], 6, money(0), "B", 0, "R", false, 0, "")
+			d.CellFormat(cols[3], 6, money(a.Support.Monthly*12), "B", 0, "R", false, 0, "")
+			d.Ln(-1)
+		}
 	}
 	d.Ln(6)
 

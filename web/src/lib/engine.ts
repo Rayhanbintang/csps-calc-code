@@ -6,6 +6,8 @@ import type { Manifest } from './prices';
 import { unavailable } from './catalog/util';
 import { syncVmSize } from './catalog/vm';
 import { walk } from './tree';
+import { supportFee } from './support';
+import type { SupportFee } from './support';
 
 export const providerNames: Record<Provider, string> = {
   aws: 'AWS',
@@ -158,8 +160,22 @@ export function boxTotals(box: RegionBox, prices: Map<string, Priced>): Totals {
   return sumTotals([...walk(box.items)].map((n) => prices.get(n.item.id) ?? { monthly: 0, upfront: 0 }));
 }
 
-export function accountTotals(acc: Account, prices: Map<string, Priced>): Totals {
+/** What the account's services cost, before support. */
+export function serviceTotals(acc: Account, prices: Map<string, Priced>): Totals {
   return sumTotals(acc.regions.map((r) => boxTotals(r, prices)));
+}
+
+/** The account's support plan, priced from its own spend. */
+export function accountSupport(acc: Account, prices: Map<string, Priced>): SupportFee | undefined {
+  const t = serviceTotals(acc, prices);
+  return supportFee(acc.provider, acc.support, t.monthly, t.upfront);
+}
+
+/** Services plus the support plan. */
+export function accountTotals(acc: Account, prices: Map<string, Priced>): Totals {
+  const t = serviceTotals(acc, prices);
+  const s = supportFee(acc.provider, acc.support, t.monthly, t.upfront);
+  return { monthly: t.monthly + (s?.monthly ?? 0), upfront: t.upfront };
 }
 
 export function estimateTotals(est: Estimate, prices: Map<string, Priced>): Totals {

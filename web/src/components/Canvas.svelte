@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Provider } from '../lib/types';
   import { app, prices, addAccount, addRegion, removeAccount, removeRegion, addItem, moveItems } from '../lib/store.svelte';
-  import { accountKinds, accountTotals, boxTotals, providerNames } from '../lib/engine';
+  import { accountKinds, accountSupport, accountTotals, boxTotals, providerNames } from '../lib/engine';
+  import { SUPPORT } from '../lib/support';
   import { QUICK, walk } from '../lib/tree';
   import { money } from '../lib/report';
   import ItemCard from './ItemCard.svelte';
@@ -187,6 +188,23 @@
           <button class="ghost small" aria-label="Remove {acc.label}" title="Remove this {k.kind.toLowerCase()}" onclick={() => { if (confirm(`Remove ${acc.label || 'this site'} and everything in it?`)) removeAccount(acc.id); }}>✕</button>
         </div>
       </header>
+      {#if SUPPORT[acc.provider]}
+        {@const sp = SUPPORT[acc.provider]!}
+        {@const fee = accountSupport(acc, prices)}
+        <div class="support small">
+          {#if sp.included}
+            <span class="muted">Support: {sp.included}</span>
+          {:else}
+            <label>Support
+              <select value={acc.support ?? 'basic'} onchange={(e) => (acc.support = (e.currentTarget as HTMLSelectElement).value)} aria-label="Support plan of {acc.label}">
+                {#each sp.plans as plan (plan.id)}<option value={plan.id}>{plan.label}</option>{/each}
+              </select>
+            </label>
+            {#if fee}<span class="num" title={fee.basis}>{money(fee.monthly)}<span class="muted"> / mo</span></span><span class="muted basis">{fee.basis}</span>{/if}
+            <a class="muted" href={sp.src} target="_blank" rel="noopener noreferrer">Rules</a>
+          {/if}
+        </div>
+      {/if}
       {#if swapped?.accId === acc.id}
         <div class="note small" role="status">{swapped.text} <button class="ghost small" aria-label="Dismiss" onclick={() => (swapped = null)}>✕</button></div>
       {/if}
@@ -353,4 +371,7 @@
     background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius);
   }
   .bulk label { display: flex; gap: 6px; align-items: center; }
+  .support { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 4px 12px 6px; border-bottom: 1px solid var(--line); }
+  .support select { font-size: 12px; padding: 2px 4px; margin-left: 4px; }
+  .support .basis { flex: 1 1 200px; min-width: 0; }
 </style>

@@ -4,6 +4,8 @@ import type { Account, Estimate, Item, Priced, Provider, RegionBox } from './typ
 import { loadManifest } from './prices';
 import type { Manifest } from './prices';
 import { ctxFor, estimateTotals, moveItem, newItem, priceItem, uid } from './engine';
+import type { Totals } from './engine';
+import { supportFee } from './support';
 import { ADDONS, attachSpec, canHold, contains, findNode, walk } from './tree';
 import type { Node } from './tree';
 import { readSheet } from './xlsxread';
@@ -208,6 +210,11 @@ export async function repriceTabs(): Promise<void> {
     const est = $state.snapshot(t.est) as Estimate;
     let total = 0;
     const jobs: Promise<void>[] = [];
+    const per = new Map<string, Totals>();
+    const add = (accId: string, p: Priced) => {
+      const t = per.get(accId) ?? { monthly: 0, upfront: 0 };
+      per.set(accId, { monthly: t.monthly + p.monthly, upfront: t.upfront + p.upfront });
+    };
     for (const acc of est.accounts)
       for (const box of acc.regions)
         for (const node of walk(box.items)) {
@@ -216,17 +223,21 @@ export async function repriceTabs(): Promise<void> {
           const key = keyOf(acc.provider, box.region, item);
           const hit = memo.get(key);
           if (hit) {
-            total += hit.monthly;
+            add(acc.id, hit);
             continue;
           }
           jobs.push(
             priceItem(ctxFor(m, acc.provider, box.region), item).then((res) => {
               if (!res.unavailable) memo.set(key, res);
-              total += res.monthly;
+              add(acc.id, res);
             }),
           );
         }
     await Promise.all(jobs);
+    for (const acc of est.accounts) {
+      const t = per.get(acc.id) ?? { monthly: 0, upfront: 0 };
+      total += t.monthly + (supportFee(acc.provider, acc.support, t.monthly, t.upfront)?.monthly ?? 0);
+    }
     const still = app.tabs.find((x) => x.id === t.id);
     if (still && still.id !== app.tab) still.monthly = Math.round(total * 100) / 100;
   }

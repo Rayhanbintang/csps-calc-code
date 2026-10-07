@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app, prices } from '../lib/store.svelte';
-  import { accountTotals, boxTotals, estimateTotals, providerNames } from '../lib/engine';
+  import { accountSupport, accountTotals, boxTotals, estimateTotals, providerNames } from '../lib/engine';
   import { DISCLAIMER, money } from '../lib/report';
 
   const t = $derived(estimateTotals(app.est, prices));
@@ -24,6 +24,13 @@
             <td class="num muted">{money(boxTotals(box, prices).monthly)}</td>
           </tr>
         {/each}
+        {@const sup = accountSupport(acc, prices)}
+        {#if sup}
+          <tr>
+            <td class="muted indent" title={sup.basis}>Support · {sup.plan}</td>
+            <td class="num muted">{money(sup.monthly)}</td>
+          </tr>
+        {/if}
       {/each}
     </tbody>
   </table>

@@ -48,14 +48,22 @@ type Box struct {
 
 // Account is one site on one provider.
 type Account struct {
-	Provider     string  `json:"provider"`
-	ProviderName string  `json:"providerName"`
-	Kind         string  `json:"kind"` // "AWS account", "Google Cloud project", ...
-	Ref          string  `json:"ref"`  // account ID, project ID or compartment; may be empty
-	Label        string  `json:"label"`
-	Monthly      float64 `json:"monthly"`
-	Upfront      float64 `json:"upfront"`
-	Boxes        []Box   `json:"boxes"`
+	Provider     string   `json:"provider"`
+	ProviderName string   `json:"providerName"`
+	Kind         string   `json:"kind"` // "AWS account", "Google Cloud project", ...
+	Ref          string   `json:"ref"`  // account ID, project ID or compartment; may be empty
+	Label        string   `json:"label"`
+	Monthly      float64  `json:"monthly"` // services plus support
+	Upfront      float64  `json:"upfront"`
+	Support      *Support `json:"support,omitempty"`
+	Boxes        []Box    `json:"boxes"`
+}
+
+// Support is the account's support plan, priced from the account's own spend.
+type Support struct {
+	Plan    string  `json:"plan"`
+	Monthly float64 `json:"monthly"`
+	Basis   string  `json:"basis"`
 }
 
 // Report is the priced estimate.
@@ -89,7 +97,7 @@ func (a Account) Site() string {
 }
 
 // Disclaimer goes on every page and file.
-const Disclaimer = "Estimate only. Prices are public list prices in USD. They exclude taxes, support plans, negotiated discounts and credits. Free-tier allowances count only where the provider builds them into its price list."
+const Disclaimer = "Estimate only. Prices are public list prices in USD. They exclude taxes, negotiated discounts and credits, and support plans unless a site lists one. Free-tier allowances count only where the provider builds them into its price list."
 
 // Limits keep one request from making a huge file.
 const (

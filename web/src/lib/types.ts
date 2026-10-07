@@ -29,6 +29,8 @@ export interface Account {
   folded?: boolean;
   /** Where the site frame sits on the board. */
   at?: At;
+  /** Support plan id from lib/support.ts; missing = Basic (no charge). */
+  support?: string;
 }
 
 export interface RegionBox {

@@ -3,7 +3,7 @@
 import type { Estimate, Line, Priced, Provider } from './types';
 import type { Manifest } from './prices';
 import { service } from './catalog';
-import { accountKinds, pricingLabel, providerNames, sumTotals } from './engine';
+import { accountKinds, accountSupport, pricingLabel, providerNames, sumTotals } from './engine';
 import { subtotal, walk } from './tree';
 
 export interface ReportItem {
@@ -45,8 +45,11 @@ export interface ReportAccount {
   /** Account ID, project ID, compartment; may be empty. */
   ref: string;
   label: string;
+  /** Services plus support. */
   monthly: number;
   upfront: number;
+  /** The support plan, when one is charged. */
+  support?: { plan: string; monthly: number; basis: string };
   boxes: ReportBox[];
 }
 
@@ -64,7 +67,7 @@ export interface Report {
 }
 
 export const DISCLAIMER =
-  'Estimate only. Prices are public list prices in USD. They exclude taxes, support plans, negotiated discounts and credits. Free-tier allowances count only where the provider builds them into its price list.';
+  'Estimate only. Prices are public list prices in USD. They exclude taxes, negotiated discounts and credits, and support plans unless a site lists one. Free-tier allowances count only where the provider builds them into its price list.';
 
 export function buildReport(est: Estimate, prices: Map<string, Priced>, manifest: Manifest | undefined): Report {
   const used = new Set<Provider>();
@@ -104,13 +107,17 @@ export function buildReport(est: Estimate, prices: Map<string, Priced>, manifest
         items,
       };
     });
+    const services = sumTotals(boxes);
+    const support = accountSupport(acc, prices);
     return {
       provider: acc.provider,
       providerName: providerNames[acc.provider],
       kind: accountKinds[acc.provider].kind,
       ref: acc.ref ?? '',
       label: acc.label,
-      ...sumTotals(boxes),
+      monthly: services.monthly + (support?.monthly ?? 0),
+      upfront: services.upfront,
+      support,
       boxes,
     };
   });

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Provider } from '../lib/types';
   import { app, prices, setRegion } from '../lib/store.svelte';
-  import { accountTotals, boxTotals, estimateTotals, pricingLabel, providerNames } from '../lib/engine';
+  import { accountSupport, accountTotals, boxTotals, estimateTotals, pricingLabel, providerNames } from '../lib/engine';
   import { service } from '../lib/catalog';
   import { money } from '../lib/report';
   import RegionSelect from './RegionSelect.svelte';
@@ -93,6 +93,15 @@
               </tr>
             {/each}
           {/each}
+          {@const sup = accountSupport(acc, prices)}
+          {#if sup}
+            <tr class="suprow">
+              <td></td><td></td><td></td>
+              <td>Support: {sup.plan}</td>
+              <td class="small muted" colspan="3">{sup.basis}</td>
+              <td class="num">{money(sup.monthly)}</td><td></td>
+            </tr>
+          {/if}
           {/if}
         {/each}
       </tbody>
@@ -121,8 +130,8 @@
   .fold { width: 22px; height: 22px; padding: 0; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; }
   .chev { display: inline-block; transition: transform 0.12s; }
   .chev.open { transform: rotate(90deg); }
-  tbody tr:not(.boxrow, .siterow) { cursor: pointer; }
-  tbody tr:not(.boxrow, .siterow):hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  tbody tr:not(.boxrow, .siterow, .suprow) { cursor: pointer; }
+  tbody tr:not(.boxrow, .siterow, .suprow):hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
   tr.bad td { color: var(--danger); }
   .flag { color: var(--aws); }
 </style>
