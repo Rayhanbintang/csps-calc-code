@@ -468,7 +468,7 @@ export const interconnect: Service = {
         } else {
           // Dedicated Interconnect sells 10 Gbps and 100 Gbps circuits only; smaller asks get one 10 Gbps circuit.
           const dcap = cap === '100G' ? '100Gbps' : '10Gbps';
-          if (cap !== '10G' && cap !== '100G') notes.push(`Dedicated Interconnect starts at 10 Gbps, so ${capTxt} is priced as a 10 Gbps circuit. Partner Interconnect sells smaller attachments.`);
+          if (cap !== '10G' && cap !== '100G') notes.push(`Dedicated Interconnect starts at 10 Gbps, so this card prices ${capTxt} as one 10 Gbps circuit. Partner Interconnect sells smaller attachments.`);
           const c = gcpFind(rows, new RegExp(`^Cloud Interconnect - ${dcap} Dedicated circuit$`));
           const a = gcpFind(rows, new RegExp(`^Cloud Interconnect - ${dcap} VLAN attachment via Dedicated Interconnect$`));
           lines.push(line(`Dedicated circuit ${dcap}`, ports * H, 'circuit-hours', must(gcpRate(c), 'Interconnect circuit')));

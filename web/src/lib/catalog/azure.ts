@@ -316,7 +316,7 @@ async function azDbPrice(ctx: Ctx, item: Item): Promise<Priced> {
     if (ha && !bc) lines.push(line('Zone redundancy', v * hrs * q, 'vCore-hours', must(azRate(zr), 'SQL Database zone redundancy')));
     if (gb) lines.push(line(`Storage${ha && !bc ? ', zone redundant' : ''}`, gb, 'GB-month', must(azRate(disk), 'SQL Database storage')));
     const notes = [`Azure SQL Database, ${tier} (Gen5). Memory comes with the vCore count (about 5.1 GB each).`];
-    notes.push(ahb ? 'Azure Hybrid Benefit: your own SQL Server licence, so no licence line.' : 'The SQL Server licence is included; Azure Hybrid Benefit removes it.');
+    notes.push(ahb ? 'Azure Hybrid Benefit: your own SQL Server licence, so no licence line.' : 'This price includes the SQL Server licence; Azure Hybrid Benefit removes it.');
     if (bc) notes.push('Business Critical keeps three replicas, so high availability is in the price.');
     if (engine === 'sqlserver-web') notes.push('Azure SQL Database has no Web edition; priced as General Purpose.');
     return priced(lines, { sku: `Azure SQL Database ${bc ? 'BC' : 'GP'} · ${v} vCore`, notes });
@@ -605,7 +605,7 @@ async function azCdnPrice(ctx: Ctx, item: Item): Promise<Priced> {
     line('Front Door Standard base fee', item.qty, 'profile-months', must(azRate(base), 'Front Door base fee')),
     tierLine(`Data out to viewers, ${zone}`, gb, 'GB', must(azCost(azMeter(rows, (r) => r.z === zone && r.m === 'Standard Data Transfer Out'), gb), 'Front Door data out')),
     tierLine(`Requests, ${zone}`, req, 'requests', must(azCost(azMeter(rows, (r) => r.z === zone && r.m === 'Standard Requests'), req), 'Front Door requests')),
-  ], { sku: 'Azure Front Door Standard', notes: ['Data from an Azure origin to Front Door is billed on the origin side; not included.'] });
+  ], { sku: 'Azure Front Door Standard', notes: ['Azure bills data from the origin to Front Door on the origin side; this card leaves it out.'] });
 }
 
 async function azBackupPrice(ctx: Ctx, item: Item): Promise<Priced> {
@@ -615,7 +615,7 @@ async function azBackupPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const what = str(item.spec, 'what', 'vm');
   const stored = azMeter(rows, (r) => r.p === 'Backup' && r.m === 'Standard LRS Data Stored');
   const lines: Line[] = [];
-  const notes = ['Backups kept in a locally redundant vault (LRS). Geo-redundant storage costs about twice as much.'];
+  const notes = ['Azure keeps these backups in a locally redundant vault (LRS). Geo-redundant storage costs about twice as much.'];
   if (what === 'vm') {
     const fee = azureInstanceFee(gb);
     const pi = azMeter(rows, (r) => r.m === 'Azure VM Protected Instance');

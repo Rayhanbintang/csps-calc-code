@@ -101,7 +101,7 @@ export const backup: Service = {
     { key: 'what', label: 'What is backed up', type: 'select', options: whatOpts, show: (s) => !s.on },
     {
       key: 'gb', label: 'Backup storage', type: 'number', unit: 'GB', min: 0, step: 10,
-      help: 'The size the backups keep. Snapshots after the first store only the changes, so this is often close to the data size plus daily change times the days kept.',
+      help: 'Storage the backups take. After the first snapshot, each one stores only the changes: about the data size plus the daily change times the days you keep.',
     },
   ],
   providers: {
