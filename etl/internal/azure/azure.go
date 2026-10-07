@@ -45,11 +45,32 @@ var regional = []string{
 	"Virtual Machines", "Storage", "Azure Kubernetes Service", "Container Instances", "Azure Container Apps", "Functions",
 	"Azure Database for MySQL", "Azure Database for PostgreSQL", "SQL Database", "Redis Cache", "Application Gateway",
 	"Bandwidth", "VPN Gateway", "ExpressRoute", "Azure DDOS Protection", "API Management", "Service Bus", "Event Grid",
-	"Notification Hubs", "Azure Monitor", "Log Analytics",
+	"Notification Hubs", "Azure Monitor", "Log Analytics", "Backup",
 }
 
 // global are the services priced under "Global", "" or a billing zone ("Zone 1").
 var global = []string{"Load Balancer", "NAT Gateway", "Virtual Network", "Azure DNS", "ExpressRoute", "Azure Front Door Service"}
+
+// vmLicences are the per-VM-size licence products the VM pricer reads.
+var vmLicences = []string{
+	"SQL Server Standard", "SQL Server Enterprise", "SQL Server Web",
+	"Red Hat Enterprise Linux", "SUSE Linux Enterprise Server Standard", "Ubuntu Pro",
+}
+
+// dedupe drops rows that repeat exactly; the API lists some billing-zone meters twice.
+func dedupe(rows []Row) []Row {
+	seen := map[string]bool{}
+	out := rows[:0]
+	for _, r := range rows {
+		b, _ := json.Marshal(r)
+		if seen[string(b)] {
+			continue
+		}
+		seen[string(b)] = true
+		out = append(out, r)
+	}
+	return out
+}
 
 // Row is one meter in a slim form.
 type Row struct {
@@ -247,17 +268,24 @@ func Fetch(ctx context.Context, write func(string, any) error) ([][2]string, []s
 			rows = append(rows, r)
 		}
 	}
-	// SQL Server licences for VMs are sold per VM size, once for all regions.
-	lic, err := query(ctx, "serviceName eq 'Virtual Machines Licenses' and (productName eq 'SQL Server Standard' or productName eq 'SQL Server Enterprise' or productName eq 'SQL Server Web')")
-	if err != nil {
-		return nil, files, fmt.Errorf("licences: %w", err)
-	}
-	for _, it := range lic {
-		if r, ok := slim(it); ok {
-			r.Zone = "Global"
-			rows = append(rows, r)
+	// Licences sold once for all regions: SQL Server and Linux distributions on VMs (per VM
+	// size), and the SQL licence of SQL Database (per vCore; the regional meter is compute only).
+	for _, f := range []string{
+		"serviceName eq 'Virtual Machines Licenses' and " + anyOf("productName", vmLicences),
+		"serviceName eq 'SQL Database' and armRegionName eq 'Global' and contains(productName, 'SQL License')",
+	} {
+		lic, err := query(ctx, f)
+		if err != nil {
+			return nil, files, fmt.Errorf("licences: %w", err)
+		}
+		for _, it := range lic {
+			if r, ok := slim(it); ok {
+				r.Zone = "Global"
+				rows = append(rows, r)
+			}
 		}
 	}
+	rows = dedupe(rows)
 	if err := write("global.json", rows); err != nil {
 		return nil, files, err
 	}

@@ -104,7 +104,38 @@ export async function moveItem(item: Item, from: Provider, to: Provider, ctx: Ct
   // Flag only items where a type or class had to be matched; a VPC or a cluster carries
   // over as is.
   else moved = { ...item, pricing: { model: 'od' }, check: impl.fields ? `Moved from ${providerNames[from]}. Check the settings.` : undefined };
+  if (impl && item.pricing && item.pricing.model !== 'od') {
+    const was = pricingLabel(from, item.svc, item.pricing);
+    const next = carryPricing(item.pricing, impl.models ?? []);
+    moved = {
+      ...moved,
+      pricing: next,
+      check: next.model === 'od'
+        ? `Was ${was} on ${providerNames[from]}; ${providerNames[to]} has no commitment price for this service, so it is on demand now.`
+        : `Was ${was} on ${providerNames[from]}; now ${pricingLabel(to, item.svc, next)}. Check the commitment.`,
+    };
+  }
   return children ? { ...moved, children } : moved;
+}
+
+/** The closest commitment on another cloud: a reservation stays a reservation where one
+ *  exists (AWS RI, Azure reservation, Google committed use), a spend plan stays a spend
+ *  plan (Savings Plans), with the same term and, where offered, the same upfront payment. */
+export function carryPricing(p: Pricing, models: ModelOption[]): Pricing {
+  const order: Record<string, Pricing['model'][]> = { ri: ['ri', 'cud', 'sp'], sp: ['sp', 'cud', 'ri'], cud: ['cud', 'ri', 'sp'] };
+  for (const want of order[p.model] ?? []) {
+    const m = models.find((x) => x.model === want);
+    if (!m) continue;
+    const terms = m.terms ?? [1];
+    const term = terms.includes(p.term ?? 1) ? (p.term ?? 1) : terms[terms.length - 1];
+    const pay = m.pays ? (m.pays.includes(p.pay ?? 'no') ? (p.pay ?? 'no') : m.pays.includes('no') ? 'no' : m.pays[0]) : undefined;
+    const out: Pricing = { model: want, term };
+    if (pay) out.pay = pay;
+    if (m.classes) out.cls = p.cls ?? 's';
+    if (m.kinds) out.kind = p.kind ?? 'c';
+    return out;
+  }
+  return { model: 'od' };
 }
 
 /** After the SA picks a type by hand, keep vCPU and memory in step so later moves match. */

@@ -4,15 +4,16 @@ import { disk, object, file } from './storage';
 import { db, cache } from './db';
 import { vpc, lb, nat, ip, endpoint, egress, vpn, interconnect, dns } from './network';
 import { waf, ddos, apigw, queue, notify, monitoring, custom } from './more';
+import { cdn, backup } from './addons';
 import type { Service } from './util';
 import { azureImpls } from './azure';
 
 /** Every service, in palette order. */
 export const services: Service[] = [
   vm, k8s, containers, functions,
-  disk, object, file,
+  disk, object, file, backup,
   db, cache,
-  vpc, lb, nat, ip, endpoint, egress, vpn, interconnect, dns,
+  vpc, lb, nat, ip, endpoint, egress, vpn, interconnect, dns, cdn,
   waf, ddos,
   apigw, queue, notify,
   monitoring,

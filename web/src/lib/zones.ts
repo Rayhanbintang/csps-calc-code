@@ -44,7 +44,10 @@ export function zonesOf(item: Item, provider: Provider): Zones | undefined {
         return { kind: 'regional', label: 'Regional', title: 'Stores data across zones in the region.' };
       return count(1, provider);
     case 'dns':
+    case 'cdn':
       return { kind: 'global', label: 'Global', title: 'Served from the provider’s global network.' };
+    case 'backup':
+      return { kind: 'regional', label: 'Regional', title: 'Backups are kept across the zones of the region.' };
   }
   if (REGIONAL.has(item.svc)) return { kind: 'regional', label: 'Regional', title: 'Runs across the zones of the region by design.' };
   return undefined;

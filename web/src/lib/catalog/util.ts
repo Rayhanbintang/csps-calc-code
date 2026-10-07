@@ -189,6 +189,16 @@ export function continent(provider: Provider, code: string): 'apac' | 'na' | 'eu
     if (c.startsWith('me-')) return 'me';
     return 'af';
   }
+  if (provider === 'azure') {
+    // Azure names regions in words ("australiaeast"); "aus" contains "us", so Asia
+    // Pacific is tested first.
+    if (/^(australia|newzealand|japan|korea|southeastasia|eastasia|indonesia|malaysia|centralindia|southindia|westindia|jioindia|taiwan)/.test(c)) return 'apac';
+    if (/^(brazil|chile)/.test(c)) return 'sa';
+    if (/^(uae|qatar|israel|saudi)/.test(c)) return 'me';
+    if (/^southafrica/.test(c)) return 'af';
+    if (/^(northeurope|westeurope|uk|france|germany|norway|sweden|switzerland|poland|italy|spain|austria|belgium|denmark|finland|greece)/.test(c)) return 'eu';
+    return 'na';
+  }
   if (c.startsWith('ap-')) return 'apac';
   if (c.startsWith('us-') || c.startsWith('ca-') || c.startsWith('mx-')) return 'na';
   if (c.startsWith('eu-') || c.startsWith('uk-')) return 'eu';

@@ -31,6 +31,9 @@ export const NEW_ACCOUNT: Partial<Record<Provider, { text: string; src: string }
 };
 
 const TIERS: Record<string, Partial<Record<Provider, FreeTier>>> = {
+  cdn: {
+    aws: { text: '1 TB of data out and 10M HTTP or HTTPS requests a month, always free.', inPrice: 'no', src: 'https://aws.amazon.com/cloudfront/pricing/' },
+  },
   vm: {
     azure: { text: '12 months for new customers: 750 hours each of B1s, B2pts v2 (Arm) and B2ats v2 (AMD) a month.', inPrice: 'no', src: AZ_ACCOUNT },
     gcp: { text: 'One e2-micro VM a month in us-west1, us-central1 or us-east1.', inPrice: 'no', src: GCP_FREE },

@@ -30,6 +30,8 @@
     vm: ['VM', 'compute'], functions: ['FUNCTIONS', 'compute'],
     disk: ['DISK', 'storage'], object: ['OBJECT', 'storage'], file: ['FILES', 'storage'],
     db: ['DATABASE', 'data'], cache: ['CACHE', 'data'],
+    cdn: ['CDN', 'network'], backup: ['BACKUP', 'storage'],
+    waf: ['WAF', 'other'], ddos: ['DDOS', 'other'], monitoring: ['MONITORING', 'other'],
   };
   const kind = $derived(KIND[item.svc] ?? [service(item.svc)?.label.toUpperCase() ?? '', 'other']);
 
@@ -41,6 +43,9 @@
   const total = $derived(kids.length ? subtotal(item, (id) => prices.get(id)) : undefined);
   const effective = $derived(item.qty * mult);
   const quick = $derived(QUICK[item.svc] ?? []);
+  // VPCs and clusters are places that hold things; other containers (VM, load balancer,
+  // database) mostly hold add-ons, so while empty they show a slim row instead of a well.
+  const slim = $derived(container && !['vpc', 'k8s'].includes(item.svc) && kids.length === 0);
   const zones = $derived(zonesOf(item, provider));
   const icon = $derived(iconUrl(provider, item.svc));
   const ft = $derived(freeTier(item.svc, provider));
@@ -67,7 +72,7 @@
   }
 </script>
 
-<div class="wrap" class:container class:odd={depth % 2 === 1} style:--tc="var(--t-{kind[1]})">
+<div class="wrap" class:container={container && !slim} class:odd={depth % 2 === 1} style:--tc="var(--t-{kind[1]})">
   <div
     class="card"
     class:sel={app.selected === item.id}
@@ -136,7 +141,26 @@
     </div>
   </div>
 
-  {#if container && !item.folded}
+  {#if slim && !item.folded}
+    <div
+      class="addons"
+      class:over={over === 'yes'}
+      class:nope={over === 'no'}
+      role="group"
+      aria-label="Add-ons for {item.name || svc?.label}"
+      data-drop="inside"
+      data-box={boxId}
+      data-item={item.id}
+    >
+      {#if over === 'no'}<span class="small nope-text">{svc?.label} cannot hold that.</span>
+      {:else if over === 'yes'}<span class="small muted">Drop to attach it here</span>
+      {:else}
+        {#each quick as [childSvc, label]}
+          <button class="add small" onclick={(e) => { e.stopPropagation(); addItem(boxId, childSvc, undefined, item.id); }}>+ {label}</button>
+        {/each}
+      {/if}
+    </div>
+  {:else if container && !item.folded}
     <div
       class="inside"
       class:over={over === 'yes'}
@@ -290,4 +314,17 @@
     color: var(--muted);
   }
   .add:hover { color: var(--accent); border-color: var(--accent); border-style: solid; }
+  /* The slim add-on row under an empty VM, load balancer or database. */
+  .addons {
+    display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    padding: 4px 8px 5px 12px;
+    border: 1px dashed color-mix(in srgb, var(--tc) 35%, var(--line));
+    border-top: 0;
+    border-radius: 0 0 8px 8px;
+    min-height: 28px;
+  }
+  .addons .add { padding: 1px 7px; font-size: 11.5px; }
+  .addons.over { border-style: solid; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .addons.nope { border-color: var(--danger); }
+  .wrap:has(> .addons) > .card { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 </style>

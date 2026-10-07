@@ -4,12 +4,13 @@
 import type { Item, Line, Priced, Spec } from '../types';
 import { azure } from '../prices';
 import type { AzRow } from '../prices';
-import { H, line, must, num, opts, priced, str, tierLine, unavailable } from './util';
+import { continent, H, line, must, num, opts, priced, str, tierLine, unavailable } from './util';
 import type { Ctx, Field, ModelOption, ProviderImpl } from './util';
 import { azCost, azMeter, azRate, azReservedHourly } from './azutil';
 import { ctUsage, fnUsage } from './compute';
 import { customPrice, POINTS } from './more';
 import { destField, vpcPrice } from './network';
+import { azureInstanceFee, geoOf } from './addons';
 
 const reg = (ctx: Ctx) => azure.region(ctx.region);
 const svc = (rows: AzRow[], service: string) => rows.filter((r) => r.s === service);
@@ -92,6 +93,33 @@ const azModels: ModelOption[] = [
   { model: 'sp', label: 'Savings Plan', terms: [1, 3], pays: ['no'] },
 ];
 
+/** Licence products for Linux distributions sold with the VM. */
+const OS_LICENCE: Record<string, string> = { rhel: 'Red Hat Enterprise Linux', suse: 'SUSE Linux Enterprise Server Standard', 'ubuntu-pro': 'Ubuntu Pro' };
+
+/** Hourly licence for a VM of `vcpu` vCPUs. Meters name either an exact size ("8 vCPU VM
+ *  License", "52-vCPU VM License") or a band in the SKU ("1-4 vCPU VM", "5+ vCPU VM");
+ *  an exact size wins over a band. Bring-your-own-subscription and free meters are skipped. */
+export function osLicence(rows: AzRow[], vcpu: number): number | undefined {
+  const hourly = rows.filter((r) => r.u === '1 Hour' && !/BYOS|Free/.test(r.m + r.k));
+  const lic = hourly.some((r) => /License/.test(r.m)) ? hourly.filter((r) => /License/.test(r.m)) : hourly;
+  const exact = lic.find((r) => new RegExp(`(^|VM )${vcpu}[ -]vCPU VM (License|Support)$`).test(r.m));
+  if (exact) return exact.r;
+  const band = (s: string): [number, number] | undefined => {
+    let m = /^(\d+)-(\d+) vCPU VM$/.exec(s);
+    if (m) return [Number(m[1]), Number(m[2])];
+    m = /^(\d+)\+ vCPU VM$/.exec(s);
+    if (m) return [Number(m[1]), Infinity];
+    m = /^(\d+) vCPU VM$/.exec(s);
+    if (m) return [Number(m[1]), Number(m[1])];
+    return undefined;
+  };
+  const hit = lic.find((r) => {
+    const b = band(r.k);
+    return !!b && vcpu >= b[0] && vcpu <= b[1] && /^(\d+[-+]?\d* )?vCPU VM (License|Support)$|VM (License|Support)$/.test(r.m);
+  });
+  return hit?.r;
+}
+
 async function azVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const list = sizes(await reg(ctx));
   const arm = str(item.spec, 'arch', 'x86') === 'arm';
@@ -109,7 +137,14 @@ async function azVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
   // The Windows licence is the difference between the Windows and the Linux rate.
   const licence = windows && !byol ? size.windows!.r - size.linux.r : 0;
   if (windows && byol) notes.push('Azure Hybrid Benefit: your own Windows licence, so the Linux rate applies.');
-  if (os !== 'linux' && os !== 'windows') notes.push('Azure bills this OS licence on its own meter; add it as a custom line.');
+  // RHEL, SUSE and Ubuntu Pro bill a licence per VM size on their own meter.
+  let osRate = 0, osName = '';
+  if (os !== 'linux' && os !== 'windows') {
+    osName = OS_LICENCE[os] ?? '';
+    const r = osName ? osLicence((await azure.global()).filter((x) => x.t === 'c' && x.s === 'Virtual Machines Licenses' && x.p === osName), size.vcpu) : undefined;
+    if (r === undefined) return unavailable(`No ${osName || os} licence price for ${size.vcpu} vCPU.`);
+    osRate = r;
+  }
   // SQL Server licences are sold per VM size: one price up to 4 vCPU, then per vCPU.
   let sqlRate = 0, sqlName = '';
   if (sw !== 'none' && !byol) {
@@ -142,6 +177,7 @@ async function azVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
   // Reservations and Savings Plans cover compute only; the Windows licence stays pay as you go.
   if (licence > 0) lines.push(line('Windows Server licence', hrs * q, 'hours', licence));
   if (sqlRate > 0) lines.push(line(`SQL Server ${sqlName} licence${size.vcpu <= 4 ? ' (4-core minimum)' : ''}`, hrs * q, 'hours', sqlRate));
+  if (osRate > 0) lines.push(line(`${osName} licence`, hrs * q, 'hours', osRate));
   return priced(lines, { upfront, sku: `${name} · ${size.vcpu} vCPU · ${size.mem} GiB`, notes });
 }
 
@@ -173,8 +209,15 @@ async function azDiskPrice(ctx: Ctx, item: Item): Promise<Priced> {
   if (!tier) return unavailable(`No ${product.replace(' Managed Disks', '')} disk of ${gb} GiB here.`);
   const row = rows.find((r) => r.t === 'c' && r.p === product && r.m === `${prefix}${tier[0]} LRS Disk`)!;
   const notes = [`Managed disks come in fixed sizes: ${gb} GiB is billed as ${prefix}${tier[0]} (${tier[1]} GiB).`];
-  if (prefix !== 'P') notes.push('Standard disks also bill transactions per 10,000; not included.');
-  return priced([line(`${prefix}${tier[0]} LRS disk (${tier[1]} GiB)`, q, 'disk-months', row.r)], { sku: `${product.replace(' Managed Disks', '')} ${prefix}${tier[0]}`, notes });
+  const lines: Line[] = [line(`${prefix}${tier[0]} LRS disk (${tier[1]} GiB)`, q, 'disk-months', row.r)];
+  if (prefix !== 'P') {
+    // Standard disks bill each 10,000 operations (reads and writes up to 256 KiB each).
+    const ops = num(item.spec, 'azure.ops', 0) * q;
+    const meter = azMeter(rows, (r) => r.p === product && r.m === `${prefix}${tier[0]} LRS Disk Operations`);
+    if (ops) lines.push(line('Disk operations', ops, 'operations', must(azRate(meter), 'disk operations')));
+    else notes.push('Standard disks also bill operations per 10,000; enter operations a month to include them.');
+  }
+  return priced(lines, { sku: `${product.replace(' Managed Disks', '')} ${prefix}${tier[0]}`, notes });
 }
 
 async function azObjectPrice(ctx: Ctx, item: Item): Promise<Priced> {
@@ -260,15 +303,23 @@ async function azDbPrice(ctx: Ctx, item: Item): Promise<Priced> {
   if (engine.startsWith('sqlserver')) {
     const sql = svc(rows, 'SQL Database');
     const v = Math.max(1, Math.ceil(vcpu));
-    const core = azMeter(sql, (r) => r.p === 'SQL Database Single/Elastic Pool General Purpose - Compute Gen5' && r.m === 'vCore' && /^1 vCore$|^vCore$/.test(r.k));
+    // Enterprise maps to Business Critical (local SSD, three replicas, high availability built in).
+    const bc = engine === 'sqlserver-ent';
+    const tier = bc ? 'Business Critical' : 'General Purpose';
+    const ahb = str(item.spec, 'azure.ahb') === 'yes';
+    const core = azMeter(sql, (r) => r.p === `SQL Database Single/Elastic Pool ${tier} - Compute Gen5` && r.m === 'vCore' && /^1 vCore$|^vCore$/.test(r.k));
     const zr = azMeter(sql, (r) => r.p === 'SQL Database Single/Elastic Pool General Purpose - Compute Gen5' && r.m === 'Zone Redundancy vCore' && /^1 vCore/.test(r.k));
-    const disk = azMeter(sql, (r) => r.p === 'SQL Database Single/Elastic Pool General Purpose - Storage' && r.m === (ha ? 'General Purpose Zone Redundancy Data Stored' : 'General Purpose Data Stored'));
-    const lines: Line[] = [line(`General Purpose, ${v} vCore`, v * hrs * q, 'vCore-hours', must(azRate(core), 'SQL Database vCore'))];
-    if (ha) lines.push(line('Zone redundancy', v * hrs * q, 'vCore-hours', must(azRate(zr), 'SQL Database zone redundancy')));
-    if (gb) lines.push(line(`Storage${ha ? ', zone redundant' : ''}`, gb, 'GB-month', must(azRate(disk), 'SQL Database storage')));
-    const notes = ['Azure SQL Database, General Purpose (Gen5). Memory comes with the vCore count (about 5.1 GB each).', 'Azure Hybrid Benefit for SQL Server licences is not applied.'];
-    if (engine !== 'sqlserver-std') notes.push('Azure SQL Database has no edition choice; Business Critical is the closest to Enterprise.');
-    return priced(lines, { sku: `Azure SQL Database GP · ${v} vCore`, notes });
+    const disk = azMeter(sql, (r) => r.p === `SQL Database Single/Elastic Pool ${tier} - Storage` && r.m === (bc ? 'Business Critical Data Stored' : ha ? 'General Purpose Zone Redundancy Data Stored' : 'General Purpose Data Stored'));
+    const lic = azMeter((await azure.global()).filter((r) => r.s === 'SQL Database'), (r) => r.p === `SQL Database Single/Elastic Pool ${tier} - SQL License` && r.m === 'vCore');
+    const lines: Line[] = [line(`${tier}, ${v} vCore (compute)`, v * hrs * q, 'vCore-hours', must(azRate(core), 'SQL Database vCore'))];
+    if (!ahb) lines.push(line('SQL Server licence', v * hrs * q, 'vCore-hours', must(azRate(lic), 'SQL Database licence')));
+    if (ha && !bc) lines.push(line('Zone redundancy', v * hrs * q, 'vCore-hours', must(azRate(zr), 'SQL Database zone redundancy')));
+    if (gb) lines.push(line(`Storage${ha && !bc ? ', zone redundant' : ''}`, gb, 'GB-month', must(azRate(disk), 'SQL Database storage')));
+    const notes = [`Azure SQL Database, ${tier} (Gen5). Memory comes with the vCore count (about 5.1 GB each).`];
+    notes.push(ahb ? 'Azure Hybrid Benefit: your own SQL Server licence, so no licence line.' : 'The SQL Server licence is included; Azure Hybrid Benefit removes it.');
+    if (bc) notes.push('Business Critical keeps three replicas, so high availability is in the price.');
+    if (engine === 'sqlserver-web') notes.push('Azure SQL Database has no Web edition; priced as General Purpose.');
+    return priced(lines, { sku: `Azure SQL Database ${bc ? 'BC' : 'GP'} · ${v} vCore`, notes });
   }
   if (engine.startsWith('oracle') || engine.startsWith('aurora')) return unavailable(engine.startsWith('oracle') ? 'Oracle Database@Azure is bought through Oracle; not priced here.' : 'Aurora has no Azure equivalent; pick MySQL or PostgreSQL.');
   const pg = engine === 'postgres';
@@ -398,6 +449,13 @@ async function azVpnPrice(ctx: Ctx, item: Item): Promise<Priced> {
 
 async function azDdosPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const rows = svc(await reg(ctx), 'Azure DDOS Protection');
+  if (str(item.spec, 'on')) {
+    // One resource: DDoS IP Protection on its public IP, instead of a plan for the network.
+    const ipp = azMeter(rows, (r) => r.m === 'IP Protection Resource');
+    return priced([line('DDoS IP Protection, one public IP', H * item.qty, 'IP-hours', must(azRate(ipp), 'DDoS IP Protection'))], {
+      sku: 'Azure DDoS IP Protection', notes: ['Past about 15 protected IPs, one Network Protection plan (a DDoS card on its own) costs less.'],
+    });
+  }
   const res = num(item.spec, 'resources', 2);
   const plan = azMeter(rows, (r) => r.m === 'Network Protection Plan');
   const over = azMeter(rows, (r) => r.m === 'Network Protection Resource');
@@ -410,12 +468,19 @@ async function azDdosPrice(ctx: Ctx, item: Item): Promise<Priced> {
 /** ExpressRoute circuit sizes as Azure names them. */
 const ER_CAP: Record<string, string> = { '50M': '50 Mbps', '100M': '100 Mbps', '200M': '200 Mbps', '500M': '500 Mbps', '1G': '1 Gbps', '2G': '2 Gbps', '5G': '5 Gbps', '10G': '10 Gbps' };
 
-/** Azure prices ExpressRoute data out by the billing zone of the peering location.
- *  Default: Zone 1 for the Americas and Europe, Zone 2 elsewhere; the SA can pick. */
-function erZone(ctx: Ctx, spec: Spec): string {
+/** Azure prices ExpressRoute data out by the billing zone of the peering location
+ *  (learn.microsoft.com, "Locations and connectivity providers"). Default: the zone of the
+ *  peering locations near the region; the SA can pick another. Zone 1: North America,
+ *  Europe, Canberra. Zone 2: Asia, India, Japan, Korea, Oceania, Israel. Zone 3: South
+ *  America, Middle East, Africa. Zone 4: Mexico. */
+export function erZone(ctx: Ctx, spec: Spec): string {
   const z = str(spec, 'azure.zone');
   if (z) return z;
-  return /us|canada|brazil|mexico|europe|uk|france|germany|norway|sweden|switzerland|poland|italy|spain/.test(ctx.region) ? 'Zone 1' : 'Zone 2';
+  const r = ctx.region;
+  if (r.startsWith('mexico')) return 'Zone 4';
+  if (r.startsWith('australiacentral')) return 'Zone 1';
+  if (r.startsWith('israel')) return 'Zone 2';
+  return { na: 'Zone 1', eu: 'Zone 1', apac: 'Zone 2', sa: 'Zone 3', me: 'Zone 3', af: 'Zone 3' }[continent('azure', r)];
 }
 
 async function azInterconnectPrice(ctx: Ctx, item: Item): Promise<Priced> {
@@ -451,7 +516,28 @@ async function azDnsPrice(_ctx: Ctx, item: Item): Promise<Priced> {
 // =====================================================================================
 
 async function azWafPrice(ctx: Ctx, item: Item): Promise<Priced> {
+  const on = str(item.spec, 'on');
+  if (on === 'cdn') {
+    const g = (await glob()).filter((r) => r.s === 'Azure Front Door Service' && r.k === 'Standard' && r.z === 'Global');
+    const q = item.qty;
+    const req = num(item.spec, 'requests', 0) * q;
+    return priced([
+      line('WAF policies', num(item.spec, 'acls', 1) * q, 'policy-months', must(azRate(azMeter(g, (r) => r.m === 'Standard Policy')), 'Front Door WAF policy')),
+      line('Custom rules', num(item.spec, 'rules', 0) * q, 'rule-months', must(azRate(azMeter(g, (r) => r.m === 'Standard Rule')), 'Front Door WAF rule')),
+      line('Requests', req, 'requests', must(azRate(azMeter(g, (r) => r.m === 'Standard Requests')), 'Front Door WAF requests')),
+    ], { sku: 'WAF policy on Front Door Standard' });
+  }
   const rows = svc(await reg(ctx), 'Application Gateway');
+  if (on === 'lb') {
+    // The load balancer card already prices an Application Gateway; WAF adds the step from Standard v2 to WAF v2.
+    const fixed = (p: string) => azRate(azMeter(rows, (r) => r.p === p && r.m === 'Standard Fixed Cost'));
+    const cu = (p: string) => azRate(azMeter(rows, (r) => r.p === p && r.m === 'Standard Capacity Units'));
+    const n = item.qty;
+    return priced([
+      line('WAF v2 over Standard v2, fixed', n * H, 'gateway-hours', must(fixed('Application Gateway WAF v2') - fixed('Application Gateway Standard v2'), 'WAF gateway')),
+      line('WAF v2 over Standard v2, 1 capacity unit', n * H, 'CU-hours', must(cu('Application Gateway WAF v2') - cu('Application Gateway Standard v2'), 'WAF capacity units')),
+    ], { sku: 'Application Gateway WAF v2 (step-up)', notes: ['Priced as the difference between WAF v2 and Standard v2 on the load balancer above. Azure does not charge per rule here.'] });
+  }
   const fixed = azMeter(rows, (r) => r.p === 'Application Gateway WAF v2' && r.m === 'Standard Fixed Cost');
   const cu = azMeter(rows, (r) => r.p === 'Application Gateway WAF v2' && r.m === 'Standard Capacity Units');
   const n = Math.max(1, num(item.spec, 'acls', 1)) * item.qty;
@@ -509,12 +595,54 @@ async function azMonitoringPrice(ctx: Ctx, item: Item): Promise<Priced> {
   ], { sku: 'Azure Monitor + Log Analytics', notes: ['Metric samples assume one a minute per custom metric.'] });
 }
 
+async function azCdnPrice(ctx: Ctx, item: Item): Promise<Priced> {
+  const rows = (await glob()).filter((r) => r.p === 'Azure Front Door' && r.k === 'Standard');
+  const zone = geoOf(ctx, item.spec).azure;
+  const gb = num(item.spec, 'gb', 0) * item.qty;
+  const req = num(item.spec, 'requests', 0) * item.qty;
+  const base = azMeter(rows, (r) => r.m === 'Standard Base Fees');
+  return priced([
+    line('Front Door Standard base fee', item.qty, 'profile-months', must(azRate(base), 'Front Door base fee')),
+    tierLine(`Data out to viewers, ${zone}`, gb, 'GB', must(azCost(azMeter(rows, (r) => r.z === zone && r.m === 'Standard Data Transfer Out'), gb), 'Front Door data out')),
+    tierLine(`Requests, ${zone}`, req, 'requests', must(azCost(azMeter(rows, (r) => r.z === zone && r.m === 'Standard Requests'), req), 'Front Door requests')),
+  ], { sku: 'Azure Front Door Standard', notes: ['Data from an Azure origin to Front Door is billed on the origin side; not included.'] });
+}
+
+async function azBackupPrice(ctx: Ctx, item: Item): Promise<Priced> {
+  const rows = svc(await reg(ctx), 'Backup');
+  const gb = num(item.spec, 'gb', 0);
+  const q = item.qty;
+  const what = str(item.spec, 'what', 'vm');
+  const stored = azMeter(rows, (r) => r.p === 'Backup' && r.m === 'Standard LRS Data Stored');
+  const lines: Line[] = [];
+  const notes = ['Backups kept in a locally redundant vault (LRS). Geo-redundant storage costs about twice as much.'];
+  if (what === 'vm') {
+    const fee = azureInstanceFee(gb);
+    const pi = azMeter(rows, (r) => r.m === 'Azure VM Protected Instance');
+    lines.push(line(`Protected instance fee (${fee.label})`, fee.count * q, 'instance-months', must(azRate(pi), 'protected instance')));
+    notes.push('Azure sizes the instance fee by the disks protected; the backup size stands in for that here.');
+  } else if (what === 'file') {
+    lines.push(line('Protected file share fee', q, 'share-months', must(azRate(azMeter(rows, (r) => r.m === 'Azure Files Protected Instance')), 'file share instance')));
+  } else {
+    notes.push('Azure database services keep backups up to the database size at no charge; enter only the storage above that.');
+  }
+  lines.push(line('Backup storage', gb * q, 'GB-month', must(azRate(stored), 'backup storage')));
+  return priced(lines, { sku: 'Azure Backup', notes });
+}
+
 /** Azure implementation of each neutral service. */
 export const azureImpls: Record<string, ProviderImpl> = {
   vm: { product: 'Azure Virtual Machines', fields: azVmFields, models: azModels, price: azVmPrice, adopt: async (_c, item) => ({ ...item, spec: { ...item.spec, 'azure.size': '' }, pricing: { model: 'od' } }) },
   disk: {
     product: 'Azure Managed Disks',
-    fields: async () => [{ key: 'azure.disk', label: 'Disk type', type: 'select', options: opts(['', 'Match the disk class'], ['premium', 'Premium SSD'], ['premium-v2', 'Premium SSD v2'], ['standard-ssd', 'Standard SSD'], ['standard-hdd', 'Standard HDD']) }],
+    fields: async () => [
+      { key: 'azure.disk', label: 'Disk type', type: 'select', options: opts(['', 'Match the disk class'], ['premium', 'Premium SSD'], ['premium-v2', 'Premium SSD v2'], ['standard-ssd', 'Standard SSD'], ['standard-hdd', 'Standard HDD']) },
+      {
+        key: 'azure.ops', label: 'Disk operations', type: 'number', unit: '/ month', min: 0, step: 1_000_000,
+        help: 'Standard disks bill each 10,000 reads and writes. 100 IOPS all month is about 263M.',
+        show: (s) => ['standard-ssd', 'standard-hdd'].includes(str(s, 'azure.disk')) || (!str(s, 'azure.disk') && String(s.type).startsWith('hdd')),
+      },
+    ],
     price: azDiskPrice,
   },
   object: { product: 'Azure Blob Storage', price: azObjectPrice },
@@ -522,7 +650,10 @@ export const azureImpls: Record<string, ProviderImpl> = {
   k8s: { product: 'Azure Kubernetes Service', price: azK8sPrice },
   containers: { product: 'Azure Container Instances', price: azContainersPrice },
   functions: { product: 'Azure Functions', price: azFunctionsPrice },
-  db: { product: 'Azure Database / Azure SQL', models: [{ model: 'od', label: 'Pay as you go' }], price: azDbPrice, adopt: async (_c, item) => ({ ...item, pricing: { model: 'od' } }) },
+  db: {
+    product: 'Azure Database / Azure SQL',
+    fields: async (_c, spec) => (str(spec, 'engine').startsWith('sqlserver') ? [{ key: 'azure.ahb', label: 'Azure Hybrid Benefit (own SQL Server licence)', type: 'select', options: opts(['no', 'No'], ['yes', 'Yes']) }] : []),
+    models: [{ model: 'od', label: 'Pay as you go' }], price: azDbPrice, adopt: async (_c, item) => ({ ...item, pricing: { model: 'od' } }) },
   cache: { product: 'Azure Cache for Redis', price: azCachePrice },
   vpc: { product: 'Azure Virtual Network', price: (ctx, item) => vpcPrice(ctx, item, 'Azure does not charge for virtual networks.') },
   lb: { product: 'Azure Load Balancer / Application Gateway', price: azLbPrice },
@@ -543,6 +674,8 @@ export const azureImpls: Record<string, ProviderImpl> = {
   queue: { product: 'Azure Service Bus', price: azQueuePrice },
   notify: { product: 'Azure Event Grid', price: azNotifyPrice },
   monitoring: { product: 'Azure Monitor', price: azMonitoringPrice },
+  cdn: { product: 'Azure Front Door', price: azCdnPrice },
+  backup: { product: 'Azure Backup', price: azBackupPrice },
   custom: { product: 'Custom', price: customPrice },
 };
 

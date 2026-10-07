@@ -3,7 +3,7 @@ import type { Item, Line, Priced } from '../types';
 import { aws, gcp, oci } from '../prices';
 import {
   awsCost, awsFind, awsRate, gcpCost, gcpFind, gcpRate, line, must, num, ociCost, ociPart, ociRate, opts, priced, str,
-  tierLine,
+  tierLine, yesNo,
 } from './util';
 import type { Ctx, Service } from './util';
 
@@ -67,6 +67,12 @@ export const waf: Service = {
 // DDoS protection (Shield Advanced)
 // =====================================================================================
 
+/** Whether this DDoS card carries the organization-wide subscription: a card on its own
+ *  does; one inside a resource does only when the SA says so. */
+export function subscribed(item: Item): boolean {
+  return !str(item.spec, 'on') || str(item.spec, 'sub') === 'yes';
+}
+
 export const ddos: Service = {
   id: 'ddos',
   label: 'DDoS protection (advanced)',
@@ -74,8 +80,12 @@ export const ddos: Service = {
   blurb: 'Shield Advanced · Cloud Armor Enterprise · included on OCI',
   defaults: { resources: 2, gb: 1000 },
   fields: [
-    { key: 'resources', label: 'Protected resources', type: 'number', min: 1, step: 1 },
+    { key: 'resources', label: 'Protected resources', type: 'number', min: 1, step: 1, show: (s) => !s.on },
     { key: 'gb', label: 'Data out from protected resources', type: 'number', unit: 'GB / month', min: 0, step: 100 },
+    {
+      key: 'sub', label: 'Include the subscription on this card', type: 'select', options: yesNo, show: (s) => !!s.on,
+      help: 'AWS Shield Advanced and Cloud Armor Enterprise charge one subscription for the whole organization. Keep it on one card only.',
+    },
   ],
   providers: {
     aws: {
@@ -85,22 +95,38 @@ export const ddos: Service = {
         const rows = await aws.rows(ctx.region, 'shield');
         const gb = num(item.spec, 'gb', 0) * item.qty;
         const fee = must(awsRate(awsFind(g, 'Shield-Monthly-Fee')), 'Shield subscription');
-        const lines: Line[] = [line('Shield Advanced subscription', item.qty, 'months', fee)];
-        if (gb) lines.push(tierLine('Data out from protected load balancers', gb, 'GB', must(awsCost(awsFind(rows, 'DataTransfer-Shield-Bytes', 'LoadBalancing'), gb), 'Shield data transfer')));
-        return priced(lines, { sku: 'Shield Advanced', notes: ['The subscription covers the whole AWS Organization and needs a one-year commitment. Add it once per organization.'] });
+        const lines: Line[] = [];
+        if (subscribed(item)) lines.push(line('Shield Advanced subscription', item.qty, 'months', fee));
+        // Shield bills data out by the kind of resource it protects.
+        const on = str(item.spec, 'on');
+        const dt = on === 'cdn'
+          ? awsFind(g, 'Global-DataTransfer-Shield-Bytes', 'CloudFrontDistribution')
+          : awsFind(rows, 'DataTransfer-Shield-Bytes', on === 'ip' ? 'ShieldProtectionEIP' : 'LoadBalancing');
+        if (gb) lines.push(tierLine('Data out from protected resources', gb, 'GB', must(awsCost(dt, gb), 'Shield data transfer')));
+        const notes = subscribed(item)
+          ? ['The subscription covers the whole AWS Organization and needs a one-year commitment. Add it once per organization.']
+          : ['Protection of this resource only; the organization-wide subscription is on another card.'];
+        return priced(lines, { sku: 'Shield Advanced', notes });
       },
     },
     gcp: {
       product: 'Cloud Armor Enterprise',
       price: async (ctx, item) => {
         const rows = [...(await gcp.region(ctx.region)), ...(await gcp.global())];
-        const res = num(item.spec, 'resources', 2) * item.qty;
+        const attached = !!str(item.spec, 'on');
+        const res = (attached ? 1 : num(item.spec, 'resources', 2)) * item.qty;
         const gb = num(item.spec, 'gb', 0) * item.qty;
-        return priced([
-          line('Enterprise pay-as-you-go enrolment', item.qty, 'months', must(gcpRate(gcpFind(rows, /^Networking Cloud Armor Enterprise Paygo: Enrollment$/)), 'Armor Enterprise enrolment')),
-          tierLine('Protected resources (first 2 included)', res, 'resource-months', must(gcpCost(gcpFind(rows, /^Networking Cloud Armor Enterprise Paygo: Protected Resource$/), res), 'protected resources')),
-          tierLine('Data processing', gb, 'GiB', must(gcpCost(gcpFind(rows, /^Networking Cloud Armor Enterprise Paygo: Data Processing Fee for Load Balancer$/), gb), 'Armor data processing')),
-        ], { sku: 'Cloud Armor Enterprise, pay as you go' });
+        const cdnOn = str(item.spec, 'on') === 'cdn';
+        const protectedRow = gcpFind(rows, /^Networking Cloud Armor Enterprise Paygo: Protected Resource$/);
+        const lines: Line[] = [];
+        if (subscribed(item)) lines.push(line('Enterprise pay-as-you-go enrolment', item.qty, 'months', must(gcpRate(gcpFind(rows, /^Networking Cloud Armor Enterprise Paygo: Enrollment$/)), 'Armor Enterprise enrolment')));
+        // The enrolment includes two protected resources; a resource card on its own pays the full rate.
+        lines.push(attached
+          ? line('Protected resource', res, 'resource-months', must(gcpRate(protectedRow), 'protected resources'))
+          : tierLine('Protected resources (first 2 included)', res, 'resource-months', must(gcpCost(protectedRow, res), 'protected resources')));
+        const fee = cdnOn ? /^Networking Cloud Armor Enterprise Paygo: Data Processing Fee for CDN$/ : /^Networking Cloud Armor Enterprise Paygo: Data Processing Fee for Load Balancer$/;
+        lines.push(tierLine('Data processing', gb, 'GiB', must(gcpCost(gcpFind(rows, fee), gb), 'Armor data processing')));
+        return priced(lines, { sku: 'Cloud Armor Enterprise, pay as you go' });
       },
     },
     oci: {

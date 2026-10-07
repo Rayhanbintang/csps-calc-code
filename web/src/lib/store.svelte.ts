@@ -4,7 +4,7 @@ import type { Account, Estimate, Item, Priced, Provider, RegionBox } from './typ
 import { loadManifest } from './prices';
 import type { Manifest } from './prices';
 import { ctxFor, estimateTotals, moveItem, newItem, priceItem, uid } from './engine';
-import { canHold, contains, findNode, walk } from './tree';
+import { ADDONS, attachSpec, canHold, contains, findNode, walk } from './tree';
 import type { Node } from './tree';
 import { readSheet } from './xlsxread';
 import { SHEET, parseTemplate } from './awsimport';
@@ -283,14 +283,14 @@ export interface Target {
   parentId?: string;
 }
 
-function targetList(t: Target): { acc: Account; box: RegionBox; list: Item[]; parentSvc: string | null } | undefined {
+function targetList(t: Target): { acc: Account; box: RegionBox; list: Item[]; parent: Item | null } | undefined {
   const b = findBox(t.boxId);
   if (!b) return undefined;
-  if (!t.parentId) return { ...b, list: b.box.items, parentSvc: null };
+  if (!t.parentId) return { ...b, list: b.box.items, parent: null };
   const p = find(t.parentId);
   if (!p || p.box.id !== t.boxId) return undefined;
   p.item.children ??= [];
-  return { ...b, list: p.item.children, parentSvc: p.item.svc };
+  return { ...b, list: p.item.children, parent: p.item };
 }
 
 /** Why `svc` cannot go into the target, or undefined when it can. */
@@ -306,6 +306,7 @@ export function addItem(boxId: string, svcId: string, spec?: Item['spec'], paren
   const t = targetList({ boxId, parentId });
   if (!t) return;
   const item = newItem(svcId);
+  if (ADDONS.has(svcId)) item.spec = { ...item.spec, ...attachSpec(svcId, t.parent) };
   if (spec) item.spec = { ...item.spec, ...spec };
   if (name) item.name = name;
   t.list.splice(index ?? t.list.length, 0, item);
@@ -393,6 +394,8 @@ export async function moveItems(itemIds: string[], to: Target | string, index?: 
     let pos = at ?? again.list.length;
     // Removing the item shifts everything after it up by one.
     if (from.list === again.list && old < pos) pos -= 1;
+    // An add-on moved to another resource now serves that one.
+    if (ADDONS.has(next.svc)) next.spec = { ...next.spec, on: again.parent?.svc ?? '' };
     pos = Math.max(0, Math.min(pos, again.list.length));
     again.list.splice(pos, 0, next);
     if (at !== undefined) at = pos + 1; // keep a multi-item drop in order

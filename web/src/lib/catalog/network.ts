@@ -460,21 +460,24 @@ export const interconnect: Service = {
         const ports = num(item.spec, 'ports', 1) * item.qty;
         const capTxt = cap.replace('M', 'Mbps').replace('G', 'Gbps');
         const lines: Line[] = [];
+        const notes: string[] = [];
         if (hosted) {
           const r = gcpFind(rows, new RegExp(`^Cloud Interconnect - ${capTxt} VLAN attachment via Google partner$`));
           if (!r) return unavailable(`Partner Interconnect has no ${capTxt} attachment.`);
           lines.push(line(`Partner VLAN attachment ${capTxt}`, ports * H, 'attachment-hours', gcpRate(r)));
         } else {
-          if (cap !== '10G' && cap !== '100G') return unavailable('Dedicated Interconnect comes in 10 Gbps and 100 Gbps circuits.');
-          const c = gcpFind(rows, new RegExp(`^Cloud Interconnect - ${capTxt} Dedicated circuit$`));
-          const a = gcpFind(rows, new RegExp(`^Cloud Interconnect - ${capTxt} VLAN attachment via Dedicated Interconnect$`));
-          lines.push(line(`Dedicated circuit ${capTxt}`, ports * H, 'circuit-hours', must(gcpRate(c), 'Interconnect circuit')));
-          if (a) lines.push(line(`VLAN attachment ${capTxt}`, ports * H, 'attachment-hours', gcpRate(a)));
+          // Dedicated Interconnect sells 10 Gbps and 100 Gbps circuits only; smaller asks get one 10 Gbps circuit.
+          const dcap = cap === '100G' ? '100Gbps' : '10Gbps';
+          if (cap !== '10G' && cap !== '100G') notes.push(`Dedicated Interconnect starts at 10 Gbps, so ${capTxt} is priced as a 10 Gbps circuit. Partner Interconnect sells smaller attachments.`);
+          const c = gcpFind(rows, new RegExp(`^Cloud Interconnect - ${dcap} Dedicated circuit$`));
+          const a = gcpFind(rows, new RegExp(`^Cloud Interconnect - ${dcap} VLAN attachment via Dedicated Interconnect$`));
+          lines.push(line(`Dedicated circuit ${dcap}`, ports * H, 'circuit-hours', must(gcpRate(c), 'Interconnect circuit')));
+          if (a) lines.push(line(`VLAN attachment ${dcap}`, ports * H, 'attachment-hours', gcpRate(a)));
         }
         const gb = num(item.spec, 'gb', 0) * item.qty;
         const egressRow = gcpFind(rows, new RegExp(`^Cloud Interconnect - Local Data Transfer in ${gcpIcGroup(ctx.region)}$`));
         if (gb) lines.push(line('Data out over Interconnect', gb, 'GiB', must(gcpRate(egressRow), 'Interconnect egress')));
-        return priced(lines, { sku: `${hosted ? 'Partner' : 'Dedicated'} Interconnect ${capTxt}` });
+        return priced(lines, { sku: `${hosted ? 'Partner' : 'Dedicated'} Interconnect ${hosted ? capTxt : cap === '100G' ? '100Gbps' : '10Gbps'}`, notes });
       },
     },
     oci: {

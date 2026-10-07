@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from './types';
-import { canHold, contains, effectiveQty, findNode, subtotal, walk } from './tree';
+import { attachSpec, canHold, contains, effectiveQty, findNode, subtotal, walk } from './tree';
 
 const item = (id: string, svc: string, qty = 1, children?: Item[]): Item => ({ id, svc, qty, spec: {}, children });
 
@@ -50,8 +50,9 @@ describe('counts multiply down the tree', () => {
 });
 
 describe('nesting rules', () => {
-  it('VMs hold disks only', () => {
+  it('VMs hold disks and their add-ons', () => {
     expect(canHold('vm', 'disk')).toBe(true);
+    expect(canHold('vm', 'backup')).toBe(true);
     expect(canHold('vm', 'vm')).toBe(false);
     expect(canHold('vm', 'db')).toBe(false);
   });
@@ -79,6 +80,35 @@ describe('quick-add buttons', () => {
     for (const [parent, list] of Object.entries(QUICK)) {
       for (const [svc] of list) expect(canHold(parent === 'box' ? null : parent, svc), `${parent} > ${svc}`).toBe(true);
     }
-    expect(QUICK.vm.map(([s]) => s)).toEqual(['disk']);
+    expect(QUICK.vm.map(([s]) => s)).toEqual(['disk', 'backup', 'monitoring']);
   });
 });
+
+describe('add-ons sit inside what they serve', () => {
+  it('WAF attaches to load balancers, API gateways and CDNs only', () => {
+    for (const p of ['lb', 'apigw', 'cdn']) expect(canHold(p, 'waf'), p).toBe(true);
+    for (const p of ['vpc', 'vm', 'db']) expect(canHold(p, 'waf'), p).toBe(false);
+  });
+  it('a VPC holds an ALB that holds a WAF', () => {
+    expect(canHold('vpc', 'lb') && canHold('lb', 'waf')).toBe(true);
+  });
+  it('a WAF on each of 2 ALBs prices 2 web ACLs', () => {
+    const waf = it_('waf', 1);
+    const alb: Item = { ...it_('lb', 2), children: [waf] };
+    const n = [...walk([alb])].find((x) => x.item.svc === 'waf')!;
+    expect(effectiveQty(n)).toBe(2);
+  });
+  it('starting values come from the parent', () => {
+    const api: Item = { ...it_('apigw', 1), spec: { requests: 5_000_000 } };
+    expect(attachSpec('waf', api)).toMatchObject({ on: 'apigw', acls: 1, requests: 5_000_000 });
+    expect(attachSpec('ddos', it_('lb', 1))).toMatchObject({ on: 'lb', resources: 1, sub: 'no' });
+    const disk: Item = { ...it_('disk', 1), spec: { gb: 250 } };
+    expect(attachSpec('backup', disk)).toMatchObject({ on: 'disk', what: 'vm', gb: 250 });
+    expect(attachSpec('backup', { ...it_('db', 1), spec: { gb: 80 } })).toMatchObject({ what: 'db', gb: 80 });
+    expect(attachSpec('waf', null)).toEqual({ on: '' });
+  });
+});
+
+function it_(svc: string, qty: number): Item {
+  return { id: `${svc}-${Math.random()}`, svc, qty, spec: {} };
+}

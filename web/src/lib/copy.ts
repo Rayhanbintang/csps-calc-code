@@ -35,6 +35,8 @@ const FIELDS: Record<string, { count?: string[]; amount?: string[] }> = {
   disk: { amount: ['gb'] },
   object: { amount: ['gb', 'puts', 'gets'] },
   file: { amount: ['gb'] },
+  cdn: { amount: ['gb', 'requests'] },
+  backup: { amount: ['gb'] },
 };
 
 /** A count at `f` times: rounded up, at least 1. */
@@ -58,10 +60,11 @@ function scaleSpec(svc: string, spec: Spec, f: number): Spec {
 }
 
 /** A copy of an item with new ids. `f` = 1 for the same size, 0.5 for half.
- *  `parentSvc` is the container the item sits in. Disks inside a VM copy unchanged: the VM
- *  count above them already scales, so their total follows it (2 of 4 VMs × 2 disks = 4). */
+ *  `parentSvc` is the container the item sits in. What sits inside a container whose count
+ *  scales copies unchanged: the count above it already scales, so its total follows
+ *  (2 of 4 VMs × 2 disks = 4; a WAF on each of half the load balancers). */
 export function cloneItem(item: Item, withInside: boolean, f = 1, parentSvc: string | null = null): Item {
-  const g = parentSvc === 'vm' ? 1 : f;
+  const g = parentSvc && QTY[parentSvc] ? 1 : f;
   const copy: Item = {
     ...structuredClone(item),
     id: uid(),

@@ -42,6 +42,10 @@ var Regional = []Service{
 				return true
 			case "System Operation":
 				return strings.HasSuffix(a["usagetype"], "Aurora:StorageIOUsage") // Aurora Standard I/O requests
+			case "Storage Snapshot":
+				// Backup storage past the free allowance: one RDS row and the Aurora rows.
+				e := a["databaseEngine"]
+				return e == "Any" || strings.HasPrefix(e, "Aurora")
 			}
 			return false
 		}},
@@ -80,12 +84,22 @@ var Regional = []Service{
 	{Code: "AmazonSNS", File: "sns"},
 	{Code: "AWSQueueService", File: "sqs"},
 	{Code: "AmazonCloudWatch", File: "cloudwatch"},
+	{Code: "AWSBackup", File: "backup", Keep: func(f string, a map[string]string) bool {
+		// Storage in the region's own vault; copies to other regions, logically
+		// air-gapped vaults and search are left out.
+		u := a["usagetype"]
+		return strings.Contains(u, "Storage-") && !strings.Contains(u, "CrossRegion") && !strings.HasSuffix(u, "-LAGV")
+	}},
 }
 
 // Global services live in the "aws-other" region of the Price List API.
 var Global = []Service{
 	{Code: "AWSShield", File: "shield"},
 	{Code: "AmazonRoute53", File: "route53"},
+	// CloudFront prices by where viewers are (US, EU, AP, ...), not by AWS region.
+	{Code: "AmazonCloudFront", File: "cloudfront", Keep: func(f string, a map[string]string) bool {
+		return f == "Data Transfer" || f == "Request"
+	}},
 }
 
 // ParseRows streams an offer file and returns the kept products as price rows.
