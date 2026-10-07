@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { fly } from 'svelte/transition';
   import { view } from '../lib/board.svelte';
-  import { app, find, repriceAll, repriceTabs, saveTabs } from '../lib/store.svelte';
+  import { app, askRemove, find, repriceAll, repriceTabs, saveTabs } from '../lib/store.svelte';
   import Header from './Header.svelte';
   import Tabs from './Tabs.svelte';
   import Palette from './Palette.svelte';
@@ -82,14 +82,27 @@
     panelOpen = on;
     try { localStorage.setItem(PANEL_KEY, on ? 'open' : 'closed'); } catch { /* ignore */ }
   }
-  const showPanel = $derived(selectedExists || panelOpen);
+  // The review table carries its own totals per site, so the totals drawer stays shut there.
+  const showPanel = $derived(selectedExists || (panelOpen && app.view !== 'review'));
   let asideW = $state(0);
   $effect(() => {
     view.reserve = showPanel ? asideW + 16 : 0;
   });
 
+  function typing(e: KeyboardEvent): boolean {
+    const el = e.target as HTMLElement | null;
+    return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  }
+
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') app.selected = null;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && app.selected && !typing(e)) {
+      const f = find(app.selected);
+      if (f) {
+        e.preventDefault();
+        askRemove(f.item);
+      }
+    }
   }
 </script>
 
@@ -146,7 +159,7 @@
               <Summary />
             {/if}
           </aside>
-        {:else}
+        {:else if app.view !== 'review'}
           <button class="peek" onclick={() => setPanel(true)} title="Show the estimate totals">Totals</button>
         {/if}
       </div>

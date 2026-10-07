@@ -1,6 +1,7 @@
 // The board: a pan-and-zoom surface where site frames and region boxes sit where the SA
 // puts them, like a diagram tool. Cards inside a box still stack on their own, so nesting
 // and totals work as before.
+import { tick } from 'svelte';
 import type { Account, At, Estimate, RegionBox } from './types';
 
 export const GRID = 16;
@@ -132,4 +133,42 @@ export function grabWidth(e: PointerEvent, get: () => number, set: (w: number) =
   el.addEventListener('pointermove', move);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
+}
+
+/** The card that just flashed to show where it is. */
+export const flash = $state({ id: null as string | null });
+let flashTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Pans (and zooms in, when far out) so the card sits in the middle of the free board, then
+ *  flashes it. In the stacked phone layout it scrolls the page instead. */
+export async function focusItem(id: string): Promise<void> {
+  await tick();
+  const el = document.querySelector<HTMLElement>(`.card[data-item="${CSS.escape(id)}"]`);
+  if (!el) return;
+  flash.id = id;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => (flash.id = null), 1600);
+  const vp = el.closest<HTMLElement>('.viewport.free');
+  if (!vp) {
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return;
+  }
+  const v = vp.getBoundingClientRect();
+  let r = el.getBoundingClientRect();
+  if (view.z < 0.8) {
+    zoomAt(r.left + r.width / 2 - v.left, r.top + r.height / 2 - v.top, 0.8);
+    await tick();
+    r = el.getBoundingClientRect();
+  }
+  const dx = (v.width - view.reserve) / 2 - (r.left + r.width / 2 - v.left);
+  const dy = v.height / 2 - (r.top + r.height / 2 - v.top);
+  const x0 = view.x, y0 = view.y, t0 = performance.now(), ms = 280;
+  const step = (now: number) => {
+    const k = Math.min(1, (now - t0) / ms);
+    const e = 1 - (1 - k) ** 3;
+    view.x = x0 + dx * e;
+    view.y = y0 + dy * e;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }

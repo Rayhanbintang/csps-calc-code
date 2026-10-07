@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Provider } from '../lib/types';
   import { app, prices, setRegion } from '../lib/store.svelte';
-  import { boxTotals, pricingLabel, providerNames } from '../lib/engine';
+  import { accountTotals, boxTotals, estimateTotals, pricingLabel, providerNames } from '../lib/engine';
   import { service } from '../lib/catalog';
   import { money } from '../lib/report';
   import RegionSelect from './RegionSelect.svelte';
@@ -50,6 +50,18 @@
       </thead>
       <tbody>
         {#each app.est.accounts as acc (acc.id)}
+          {@const at = accountTotals(acc, prices)}
+          <tr class="siterow">
+            <td>
+              <button class="ghost fold" aria-expanded={!acc.folded} aria-label={acc.folded ? `Show ${acc.label}` : `Hide ${acc.label}`}
+                onclick={() => (acc.folded = !acc.folded)}><span class="chev" class:open={!acc.folded}>▸</span></button>
+            </td>
+            <td colspan="2"><span class="tag {acc.provider}">{providerNames[acc.provider]}</span> <strong>{acc.label}</strong></td>
+            <td colspan="4" class="muted small">{acc.regions.length} region box{acc.regions.length === 1 ? '' : 'es'} · {acc.regions.reduce((n, r) => n + countOf(r.items), 0)} items</td>
+            <td class="num"><strong>{money(at.monthly)}</strong></td>
+            <td class="num">{money(at.upfront)}</td>
+          </tr>
+          {#if !acc.folded}
           {#each acc.regions as box (box.id)}
             <tr class="boxrow">
               <td>
@@ -81,8 +93,15 @@
               </tr>
             {/each}
           {/each}
+          {/if}
         {/each}
       </tbody>
+      <tfoot>
+        {#if app.est.accounts.length}
+          {@const all = estimateTotals(app.est, prices)}
+          <tr><td></td><td colspan="6"><strong>All sites</strong></td><td class="num"><strong>{money(all.monthly)}</strong></td><td class="num">{money(all.upfront)}</td></tr>
+        {/if}
+      </tfoot>
     </table>
   </div>
 </div>
@@ -97,8 +116,13 @@
   th { text-align: left; font-size: 11.5px; color: var(--muted); padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
   .boxrow td { background: var(--panel-2); }
-  tbody tr:not(.boxrow) { cursor: pointer; }
-  tbody tr:not(.boxrow):hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .siterow td { background: color-mix(in srgb, var(--accent) 8%, var(--panel-2)); border-top: 2px solid var(--line); }
+  tfoot td { border-top: 2px solid var(--line); border-bottom: 0; }
+  .fold { width: 22px; height: 22px; padding: 0; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; }
+  .chev { display: inline-block; transition: transform 0.12s; }
+  .chev.open { transform: rotate(90deg); }
+  tbody tr:not(.boxrow, .siterow) { cursor: pointer; }
+  tbody tr:not(.boxrow, .siterow):hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
   tr.bad td { color: var(--danger); }
   .flag { color: var(--aws); }
 </style>

@@ -1,13 +1,14 @@
 <script lang="ts">
   import ItemCard from './ItemCard.svelte';
   import type { Item, Provider } from '../lib/types';
-  import { app, prices, addItem, moveItems } from '../lib/store.svelte';
+  import { app, prices, addItem, moveItems, askRemove } from '../lib/store.svelte';
   import { service } from '../lib/catalog';
   import { money } from '../lib/report';
   import { QUICK, isContainer, subtotal } from '../lib/tree';
   import { drag, press } from '../lib/drag.svelte';
   import { zonesOf } from '../lib/zones';
   import { iconUrl } from '../lib/icons';
+  import { flash } from '../lib/board.svelte';
   import { freeTier, freeTierText, NEW_ACCOUNT } from '../lib/freetier';
 
   let {
@@ -70,6 +71,7 @@
   <div
     class="card"
     class:sel={app.selected === item.id}
+    class:flash={flash.id === item.id}
     class:bad={!!p?.unavailable}
     class:check={!!item.check}
     class:before={edge === 'before'}
@@ -121,6 +123,8 @@
     </div>
     <button class="ghost copy" aria-label="Copy {item.name || svc?.label}" title="Copy this card"
       onclick={(e) => { e.stopPropagation(); app.copy = { kind: 'item', id: item.id }; }}>⧉</button>
+    <button class="ghost copy del" aria-label="Delete {item.name || svc?.label}" title="Delete this card"
+      onclick={(e) => { e.stopPropagation(); askRemove(item); }}>🗑</button>
     <div class="cost num">
       {#if ft}
         <button class="ghost ft" class:on={ftOpen} aria-expanded={ftOpen} aria-label="Free tier" title={freeTierText(item.svc, provider)}
@@ -165,7 +169,7 @@
   .card {
     position: relative;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
     gap: 8px;
     align-items: start;
     background: var(--panel);
@@ -200,6 +204,13 @@
   .card:hover { border-color: var(--accent); }
   .card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
   .card.bad { border-color: var(--danger); }
+  /* A card that was just added from a suggestion pulses so the eye finds it. */
+  .card.flash { animation: flash 0.8s ease-out 2; }
+  @keyframes flash {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); }
+    100% { box-shadow: 0 0 0 14px transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) { .card.flash { animation: none; outline: 3px solid var(--accent); } }
   .card.check { background: var(--warn-bg); border-color: var(--warn-line); }
   /* Where a dragged card will land: a bar above or below this card. */
   .card.before::before, .card.after::after {
@@ -242,6 +253,8 @@
   .ftin.no { color: var(--text); }
   .copy { padding: 0 4px; border: 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
   .copy:hover { color: var(--accent); }
+  .del { font-size: 12px; }
+  .del:hover { color: var(--danger); }
   /* With a mouse the copy button shows on hover; on touch it always shows. */
   @media (hover: hover) {
     .copy { opacity: 0; }

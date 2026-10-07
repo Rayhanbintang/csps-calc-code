@@ -1,5 +1,16 @@
 <script lang="ts">
-  import { app, prices, addItem } from '../lib/store.svelte';
+  import { app, prices, addItem, reveal } from '../lib/store.svelte';
+  import { focusItem } from '../lib/board.svelte';
+  import type { Reminder } from '../lib/reminders';
+
+  // Adds the suggested card, then brings the board to it and flashes it so it is easy to find.
+  function act(a: NonNullable<Reminder['add']>) {
+    const id = addItem(a.boxId, a.svc, a.spec, a.parentId);
+    if (!id) return;
+    app.view = 'canvas';
+    reveal(id);
+    void focusItem(id);
+  }
   import { reminders } from '../lib/reminders';
 
   let dismissed = $state<string[]>([]);
@@ -16,7 +27,7 @@
           <span class="txt">{r.text}</span>
           <span class="act">
             {#if r.add}
-              <button class="small" onclick={() => r.add && addItem(r.add.boxId, r.add.svc, r.add.spec, r.add.parentId)}>{r.add.label}</button>
+              <button class="small" onclick={() => r.add && act(r.add)}>{r.add.label}</button>
             {/if}
             <button class="ghost small" aria-label="Dismiss" title="Dismiss" onclick={() => (dismissed = [...dismissed, r.id])}>✕</button>
           </span>

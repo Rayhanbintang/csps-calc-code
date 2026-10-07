@@ -301,7 +301,7 @@ export function refuse(t: Target, svc: string): string | undefined {
 }
 
 /** Adds a new item to a box or inside a container, at `index` (default: the end). */
-export function addItem(boxId: string, svcId: string, spec?: Item['spec'], parentId?: string, index?: number, name?: string): void {
+export function addItem(boxId: string, svcId: string, spec?: Item['spec'], parentId?: string, index?: number, name?: string): string | undefined {
   if (refuse({ boxId, parentId }, svcId)) return;
   const t = targetList({ boxId, parentId });
   if (!t) return;
@@ -310,6 +310,15 @@ export function addItem(boxId: string, svcId: string, spec?: Item['spec'], paren
   if (name) item.name = name;
   t.list.splice(index ?? t.list.length, 0, item);
   app.selected = item.id;
+  return item.id;
+}
+
+/** Opens the site and every container around an item, so its card is on screen. */
+export function reveal(itemId: string): void {
+  const f = find(itemId);
+  if (!f) return;
+  f.acc.folded = false;
+  for (let n = f.parent; n; n = findNode(f.box.items, n.id)?.parent ?? null) n.folded = false;
 }
 
 /** Copies a card next to itself, alone or with what is inside it, at `f` times the size. */
@@ -349,6 +358,13 @@ export function removeItem(itemId: string): void {
   f.list.splice(f.list.indexOf(f.item), 1);
   if (app.selected && gone.has(app.selected)) app.selected = null;
   app.ticked = app.ticked.filter((t) => !gone.has(t));
+}
+
+/** Deletes a card; a card with others inside asks first. */
+export function askRemove(item: Item): void {
+  const n = [...walk(item.children ?? [])].length;
+  if (n && !confirm(`Delete ${item.name || item.svc} and the ${n} ${n === 1 ? 'card' : 'cards'} inside it?`)) return;
+  removeItem(item.id);
 }
 
 /** Moves items, with everything inside them, into a box or a container, at `index`
