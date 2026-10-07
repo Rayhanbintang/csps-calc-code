@@ -353,15 +353,23 @@ export function copyBox(boxId: string, f = 1): void {
   found.acc.regions.push(copy);
 }
 
-/** Copies a whole site to a free spot on the right of the board. */
-export function copySite(accId: string, f = 1): void {
+/** Copies a whole site to a free spot on the right of the board, in this tab or in
+ *  another one (option B of the same design, for example). */
+export function copySite(accId: string, f = 1, tabId = app.tab): void {
   const acc = app.est.accounts.find((a) => a.id === accId);
   if (!acc) return;
   const copy = cloneAccount($state.snapshot(acc) as Account, f);
-  copy.label = copyLabel(acc.label, f);
-  copy.ref = undefined;
-  copy.at = freeSpot(app.est);
-  app.est.accounts.push(copy);
+  const other = tabId !== app.tab ? app.tabs.find((t) => t.id === tabId) : undefined;
+  // In another tab the site keeps its name unless it is scaled; here it reads "DC copy".
+  copy.label = other && f === 1 ? acc.label : copyLabel(acc.label, f);
+  copy.ref = other ? acc.ref : undefined;
+  const est = other ? other.est : app.est;
+  copy.at = freeSpot(est);
+  est.accounts.push(copy);
+  if (other) {
+    saveTabs();
+    void repriceTabs();
+  }
 }
 
 export function removeItem(itemId: string): void {

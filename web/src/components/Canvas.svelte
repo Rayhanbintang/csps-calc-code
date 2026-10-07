@@ -12,7 +12,9 @@
   import type { Account } from '../lib/types';
   import { untrack } from 'svelte';
   import Board from './Board.svelte';
-  import { BOX_INSET, CARD_MIN_W, boxWidth, freezeCards, grab, grabWidth, layoutCards, needsPlace, place, settleCards, siteWidth, snap } from '../lib/board.svelte';
+  import { BOX_INSET, CARD_MIN_W, arrowStep, boxWidth, freezeCards, grab, grabWidth, guide, layoutCards, needsPlace, orderCards, place, settleCards, siteWidth, snap } from '../lib/board.svelte';
+  import type { Rect } from '../lib/board.svelte';
+  import { find } from '../lib/store.svelte';
   import type { Item, RegionBox } from '../lib/types';
 
   // Below 760 px the board turns back into a stacked list (reading a shared estimate on a phone).
@@ -57,7 +59,48 @@
     grab(e, () => item.at!, (at) => (item.at = { ...at, w: item.at?.w }), () => {
       lifted = '';
       settleCards(box.items, item.id, cardH);
+    }, {
+      scope: box.id,
+      size: () => ({ w: item.at?.w ?? CARD_MIN_W, h: cardH(item.id) }),
+      others: () => box.items.filter((o) => o.id !== item.id && o.at).map((o) => ({ x: o.at!.x, y: o.at!.y, w: o.at!.w ?? CARD_MIN_W, h: cardH(o.id) })),
     });
+  }
+
+  /** Arrow keys on a card's grip, or on the selected top-level card, move it one step. */
+  function nudgeCard(box: RegionBox, item: Item, dx: number, dy: number) {
+    freezeCards(box.items, layout(box).slots);
+    item.at = { ...item.at!, x: Math.max(0, item.at!.x + dx), y: Math.max(0, item.at!.y + dy) };
+    orderCards(box.items);
+  }
+  function cardKey(e: KeyboardEvent, box: RegionBox, item: Item) {
+    const s = arrowStep(e);
+    if (!s) return;
+    e.preventDefault();
+    nudgeCard(box, item, s.dx, s.dy);
+  }
+  function selectedKey(e: KeyboardEvent) {
+    if (!free || app.view !== 'canvas' || !app.selected) return;
+    const t = e.target as HTMLElement;
+    if (t.closest('input, select, textarea, button, [contenteditable="true"]')) return;
+    const s = arrowStep(e);
+    const f = s ? find(app.selected) : undefined;
+    if (!s || !f || f.parent) return;
+    e.preventDefault();
+    nudgeCard(f.box, f.item, s.dx, s.dy);
+  }
+
+  /** Measured height of each site frame, so sites line up with each other. */
+  let sh = $state<Record<string, number>>({});
+  const siteRects = (except: string): Rect[] =>
+    app.est.accounts.filter((a) => a.id !== except && a.at).map((a) => ({ x: a.at!.x, y: a.at!.y, w: siteWidth(a), h: sh[a.id] ?? 200 }));
+  const boxRects = (acc: Account, except: string): Rect[] =>
+    acc.regions.filter((b) => b.id !== except && b.at).map((b) => ({ x: b.at!.x, y: b.at!.y, w: boxWidth(b), h: hs[b.id] ?? 120 }));
+  function frameKey(e: KeyboardEvent, get: () => { x: number; y: number } | undefined, set: (x: number, y: number) => void) {
+    const s = arrowStep(e);
+    if (!s) return;
+    e.preventDefault();
+    const at = get() ?? { x: 0, y: 0 };
+    set(Math.max(0, at.x + s.dx), Math.max(0, at.y + s.dy));
   }
 
   function resizeCard(e: PointerEvent, box: RegionBox, item: Item) {
@@ -116,7 +159,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && blocked) blocked = null; }} />
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && blocked) blocked = null; selectedKey(e); }} />
 
 {#if blocked}
   <div class="veil" role="presentation" onclick={() => (blocked = null)}>
@@ -168,13 +211,15 @@
       style:left={free ? `${acc.at?.x ?? 0}px` : undefined}
       style:top={free ? `${acc.at?.y ?? 0}px` : undefined}
       style:width={free ? `${siteWidth(acc)}px` : undefined}
+      bind:offsetHeight={sh[acc.id]}
     >
       <header>
         <div class="ident">
           <div class="kind">
             {#if free}
-              <button class="grip ghost" aria-label="Move this site" title="Drag to move this site"
-                onpointerdown={(e) => { lifted = acc.id; grab(e, () => acc.at ?? { x: 0, y: 0 }, (at) => (acc.at = at), () => (lifted = '')); }}>⠿</button>
+              <button class="grip ghost" aria-label="Move this site (arrow keys move it too)" title="Drag to move this site"
+                onkeydown={(e) => frameKey(e, () => acc.at, (x, y) => (acc.at = { x, y }))}
+                onpointerdown={(e) => { lifted = acc.id; grab(e, () => acc.at ?? { x: 0, y: 0 }, (at) => (acc.at = at), () => (lifted = ''), { scope: 'world', size: () => ({ w: siteWidth(acc), h: sh[acc.id] ?? 200 }), others: () => siteRects(acc.id) }); }}>⠿</button>
             {/if}
             <button class="fold ghost" aria-expanded={!acc.folded} aria-label={acc.folded ? 'Show this site' : 'Fold this site'} title={acc.folded ? 'Show this site' : 'Fold this site'} onclick={() => (acc.folded = !acc.folded)}>
               <span class="chev" class:open={!acc.folded}>▸</span>
@@ -224,7 +269,7 @@
                 {#each sp.plans as plan (plan.id)}<option value={plan.id}>{plan.label}</option>{/each}
               </select>
             </label>
-            {#if fee}<span class="num" title={fee.basis}>{money(fee.monthly)}<span class="muted"> / mo</span></span><span class="muted basis">{fee.basis}</span>{/if}
+            {#if fee}<span class="num fee" title={fee.basis}>{money(fee.monthly)}<span class="muted"> / mo</span></span>{/if}
             <a class="muted" href={sp.src} target="_blank" rel="noopener noreferrer">Rules</a>
           {/if}
         </div>
@@ -234,6 +279,10 @@
       {/if}
       {#if !acc.folded}
       <div class="regions" class:free style:height={free ? `${regionsHeight(acc)}px` : undefined}>
+        {#if guide.scope === `acc:${acc.id}`}
+          {#if guide.x !== null}<div class="gl v" style:left="{guide.x}px"></div>{/if}
+          {#if guide.y !== null}<div class="gl h" style:top="{guide.y}px"></div>{/if}
+        {/if}
         {#each acc.regions as box (box.id)}
           {@const bt = boxTotals(box, prices)}
           <div
@@ -253,8 +302,9 @@
           >
             <div class="boxhead">
               {#if free}
-                <button class="grip ghost" aria-label="Move this region box" title="Drag to move this box"
-                  onpointerdown={(e) => { lifted = box.id; grab(e, () => box.at ?? { x: 0, y: 0 }, (at) => (box.at = { ...at, w: box.at?.w }), () => (lifted = '')); }}>⠿</button>
+                <button class="grip ghost" aria-label="Move this region box (arrow keys move it too)" title="Drag to move this box"
+                  onkeydown={(e) => frameKey(e, () => box.at, (x, y) => (box.at = { x, y, w: box.at?.w }))}
+                  onpointerdown={(e) => { lifted = box.id; grab(e, () => box.at ?? { x: 0, y: 0 }, (at) => (box.at = { ...at, w: box.at?.w }), () => (lifted = ''), { scope: `acc:${acc.id}`, size: () => ({ w: boxWidth(box), h: hs[box.id] ?? 120 }), others: () => boxRects(acc, box.id) }); }}>⠿</button>
               {/if}
               <button class="fold ghost" aria-expanded={!box.folded} aria-label={box.folded ? 'Show this region' : 'Fold this region'} title={box.folded ? 'Show this region' : 'Fold this region'} onclick={() => (box.folded = !box.folded)}>
                 <span class="chev" class:open={!box.folded}>▸</span>
@@ -280,7 +330,8 @@
                 {#if lay}
                   {@const s = lay.slots.get(item.id)!}
                   <div class="slot" class:lifted={lifted === item.id} style:left="{s.x}px" style:top="{s.y}px" style:width="{s.w}px" bind:offsetHeight={ih[item.id]}>
-                    <button class="cgrip ghost" aria-label="Move this card in the box" title="Drag to place this card"
+                    <button class="cgrip ghost" aria-label="Move this card in the box (arrow keys move it too)" title="Drag to place this card"
+                      onkeydown={(e) => cardKey(e, box, item)}
                       onpointerdown={(e) => moveCard(e, box, item)}>⠿</button>
                     <ItemCard {item} provider={acc.provider} boxId={box.id} index={i} />
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -290,6 +341,10 @@
                   <ItemCard {item} provider={acc.provider} boxId={box.id} index={i} />
                 {/if}
               {/each}
+              {#if guide.scope === box.id}
+                {#if guide.x !== null}<div class="gl v" style:left="{guide.x}px"></div>{/if}
+                {#if guide.y !== null}<div class="gl h" style:top="{guide.y}px"></div>{/if}
+              {/if}
             </div>
             <div class="after">
               {#if acc.provider === 'onprem'}
@@ -314,6 +369,10 @@
       {/if}
     </section>
   {/each}
+  {#if free && guide.scope === 'world'}
+    {#if guide.x !== null}<div class="gl v world" style:left="{guide.x}px"></div>{/if}
+    {#if guide.y !== null}<div class="gl h world" style:top="{guide.y}px"></div>{/if}
+  {/if}
 
 </Board>
 
@@ -378,6 +437,13 @@
   /* On the board, top-level cards sit where the SA puts them inside the box. */
   .items.free { display: block; position: relative; margin-bottom: 6px; }
   .slot { position: absolute; }
+  /* Guide lines while something lines up with a neighbour. */
+  .gl { position: absolute; z-index: 5; pointer-events: none; background: var(--accent); opacity: 0.8; }
+  .gl.v { top: -4000px; bottom: -4000px; width: 1px; }
+  .gl.h { left: -4000px; right: -4000px; height: 1px; }
+  .gl.world.v { top: -20000px; height: 40000px; }
+  .gl.world.h { left: -20000px; width: 40000px; }
+  .items.free, .regions.free { overflow: visible; }
   .slot.lifted { z-index: 4; }
   .cgrip {
     position: absolute; left: -9px; top: 6px; z-index: 2;
@@ -426,5 +492,5 @@
   .bulk label { display: flex; gap: 6px; align-items: center; }
   .support { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 4px 12px 6px; border-bottom: 1px solid var(--line); }
   .support select { font-size: 12px; padding: 2px 4px; margin-left: 4px; }
-  .support .basis { flex: 1 1 200px; min-width: 0; }
+  .support .fee { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
 </style>

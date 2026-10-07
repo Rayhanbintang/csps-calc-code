@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, copyBox, copyItem, copySite, find, findBox } from '../lib/store.svelte';
+  import { app, copyBox, copyItem, copySite, find, findBox, tabName } from '../lib/store.svelte';
   import { service } from '../lib/catalog';
   import { isContainer } from '../lib/tree';
 
@@ -22,12 +22,15 @@
   let mode = $state<'same' | 'scale'>('same');
   let pct = $state(50);
   let inside = $state(true);
+  /** Where a copied site goes: this tab or another open one. */
+  let into = $state('');
   const pctOk = $derived(Number.isFinite(pct) && pct > 0 && pct <= 1000);
 
   function close() {
     app.copy = null;
     mode = 'same';
     inside = true;
+    into = '';
   }
 
   function run() {
@@ -35,7 +38,7 @@
     const f = mode === 'same' ? 1 : pct / 100;
     if (req.kind === 'item') copyItem(req.id, inside, f);
     else if (req.kind === 'box') copyBox(req.id, f);
-    else copySite(req.id, f);
+    else copySite(req.id, f, into || app.tab);
     close();
   }
 </script>
@@ -59,6 +62,14 @@
       </fieldset>
       {#if mode === 'scale'}
         <p class="small muted">Counts, storage, requests and data transfer change; machine types and sizes stay. Counts round up.</p>
+      {/if}
+      {#if req.kind === 'site' && app.tabs.length > 1}
+        <label class="opt">Into
+          <select bind:value={into} aria-label="Tab to copy the site into">
+            <option value="">This tab</option>
+            {#each app.tabs.filter((t) => t.id !== app.tab) as t (t.id)}<option value={t.id}>{tabName(t)}</option>{/each}
+          </select>
+        </label>
       {/if}
       {#if what.inside}
         <label class="opt"><input type="checkbox" bind:checked={inside} /> With what is inside</label>

@@ -81,6 +81,19 @@ export function freezeCards(items: Item[], slots: Map<string, Slot>): void {
   }
 }
 
+/** Puts placed cards in reading order: top to bottom, then left to right. */
+export function orderCards(items: Item[]): void {
+  items.sort((a, b) => (a.at?.y ?? 0) - (b.at?.y ?? 0) || (a.at?.x ?? 0) - (b.at?.x ?? 0));
+}
+
+/** Arrow keys move a frame or card one grid step, four with Shift. Returns the step, or
+ *  null for any other key. */
+export function arrowStep(e: KeyboardEvent): { dx: number; dy: number } | null {
+  const n = (e.shiftKey ? 4 : 1) * GRID;
+  const d = ({ ArrowLeft: [-n, 0], ArrowRight: [n, 0], ArrowUp: [0, -n], ArrowDown: [0, n] } as Record<string, [number, number]>)[e.key];
+  return d ? { dx: d[0], dy: d[1] } : null;
+}
+
 /** Moves a dropped card down until it overlaps no other card, then puts the cards in
  *  reading order (top to bottom, left to right) so lists and exports follow the layout. */
 export function settleCards(items: Item[], id: string, h: (id: string) => number): void {
@@ -92,7 +105,7 @@ export function settleCards(items: Item[], id: string, h: (id: string) => number
     return a.x < b.x + (b.w ?? 0) && b.x < a.x + (a.w ?? 0) && a.y < b.y + h(o.id) && b.y < a.y + h(me.id);
   });
   for (let o = hit(), n = 0; o && n < 50; o = hit(), n++) me.at = { ...me.at!, y: snap(o.at!.y + h(o.id) + CARD_GAP + GRID / 2) };
-  items.sort((a, b) => (a.at?.y ?? Infinity) - (b.at?.y ?? Infinity) || (a.at?.x ?? 0) - (b.at?.x ?? 0));
+  orderCards(items);
 }
 
 /** Width of a site frame: room for its rightmost box. */
@@ -141,8 +154,37 @@ export function freeBoxSpot(acc: Account): At {
   return { x: right ? snap(right + GRID) : 0, y: 0 };
 }
 
-/** Moves a frame with the pointer, snapped to the grid. Call from onpointerdown on its handle. */
-export function grab(e: PointerEvent, get: () => At, set: (at: At) => void, done?: () => void): void {
+export interface Rect { x: number; y: number; w: number; h: number }
+
+/** Distance in board pixels at which an edge or centre lines up with a neighbour's. */
+export const ALIGN = 6;
+
+/** The guide line shown while a frame or card lines up with a neighbour. `scope` names the
+ *  container whose coordinates x and y use: a box id for cards, "acc:<id>" for boxes,
+ *  "world" for sites. */
+export const guide = $state({ scope: '', x: null as number | null, y: null as number | null });
+
+/** Snaps a moving rectangle to its neighbours' left, right and centre lines (and top,
+ *  bottom, middle) when one of its own lines comes within ALIGN pixels. */
+export function align(r: Rect, others: Rect[]): { x: number; y: number; gx: number | null; gy: number | null } {
+  const pick = (mine: number[], theirs: number[]) => {
+    let best = ALIGN + 1, d = 0, line: number | null = null;
+    for (const m of mine) for (const t of theirs) {
+      if (Math.abs(t - m) < best) { best = Math.abs(t - m); d = t - m; line = t; }
+    }
+    return line === null ? { d: 0, line } : { d, line };
+  };
+  const px = pick([r.x, r.x + r.w, r.x + r.w / 2], others.flatMap((o) => [o.x, o.x + o.w, o.x + o.w / 2]));
+  const py = pick([r.y, r.y + r.h, r.y + r.h / 2], others.flatMap((o) => [o.y, o.y + o.h, o.y + o.h / 2]));
+  return { x: Math.max(0, r.x + px.d), y: Math.max(0, r.y + py.d), gx: px.line, gy: py.line };
+}
+
+/** Neighbours to line up with while moving, and the moving thing's size. */
+export interface Guides { scope: string; size: () => { w: number; h: number }; others: () => Rect[] }
+
+/** Moves a frame with the pointer, snapped to the grid, and to a neighbour's lines when
+ *  `guides` is given. Call from onpointerdown on its handle. */
+export function grab(e: PointerEvent, get: () => At, set: (at: At) => void, done?: () => void, guides?: Guides): void {
   if (e.button !== 0) return;
   e.preventDefault();
   e.stopPropagation();
@@ -153,7 +195,13 @@ export function grab(e: PointerEvent, get: () => At, set: (at: At) => void, done
   document.documentElement.classList.add('moving-frame');
   const move = (ev: PointerEvent) => {
     if (ev.pointerId !== e.pointerId) return;
-    set({ x: Math.max(0, snap(start.x + (ev.clientX - sx) / view.z)), y: Math.max(0, snap(start.y + (ev.clientY - sy) / view.z)) });
+    const at = { x: Math.max(0, snap(start.x + (ev.clientX - sx) / view.z)), y: Math.max(0, snap(start.y + (ev.clientY - sy) / view.z)) };
+    if (!guides) return set(at);
+    const a = align({ ...at, ...guides.size() }, guides.others());
+    guide.scope = guides.scope;
+    guide.x = a.gx;
+    guide.y = a.gy;
+    set({ x: a.x, y: a.y });
   };
   const up = (ev: PointerEvent) => {
     if (ev.pointerId !== e.pointerId) return;
@@ -161,6 +209,7 @@ export function grab(e: PointerEvent, get: () => At, set: (at: At) => void, done
     el.removeEventListener('pointerup', up);
     el.removeEventListener('pointercancel', up);
     document.documentElement.classList.remove('moving-frame');
+    guide.scope = '';
     done?.();
   };
   el.addEventListener('pointermove', move);

@@ -125,6 +125,85 @@
     view.y = pad - y0 * z;
   }
 
+  // ---- Minimap: every site and box in small, and the part of the board on screen ----
+  const MM_W = 180, MM_H = 120;
+  type R = { x: number; y: number; w: number; h: number; kind: string; cls: string };
+  let shapes = $state<R[]>([]);
+  let vpSize = $state({ w: 0, h: 0 });
+  let showMap = $state(true);
+
+  function measure() {
+    if (!vp || !world) return;
+    const wr = world.getBoundingClientRect();
+    const z = view.z || 1;
+    const list: R[] = [];
+    for (const el of world.querySelectorAll<HTMLElement>('.account, .box')) {
+      const r = el.getBoundingClientRect();
+      const kind = el.classList.contains('account') ? 'site' : 'box';
+      const cls = kind === 'site' ? ['aws', 'gcp', 'oci', 'azure', 'onprem'].find((c) => el.classList.contains(c)) ?? '' : '';
+      list.push({ x: (r.left - wr.left) / z, y: (r.top - wr.top) / z, w: r.width / z, h: r.height / z, kind, cls });
+    }
+    shapes = list;
+    const v = vp.getBoundingClientRect();
+    vpSize = { w: v.width, h: v.height };
+  }
+
+  // Re-measure when anything on the board moves, grows or changes.
+  $effect(() => {
+    if (!free || !world) return;
+    const w = world;
+    let raf = 0;
+    const later = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(measure);
+    };
+    const mo = new MutationObserver(later);
+    mo.observe(w, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class'] });
+    const ro = new ResizeObserver(later);
+    ro.observe(w);
+    if (vp) ro.observe(vp);
+    later();
+    return () => {
+      mo.disconnect();
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  });
+
+  /** The visible part of the board, in board pixels. */
+  const seen = $derived({ x: -view.x / view.z, y: -view.y / view.z, w: (vpSize.w - view.reserve) / view.z, h: vpSize.h / view.z });
+  const bounds = $derived.by(() => {
+    const all = [...shapes, seen];
+    if (!shapes.length) return null;
+    const x0 = Math.min(...all.map((r) => r.x)), y0 = Math.min(...all.map((r) => r.y));
+    const x1 = Math.max(...all.map((r) => r.x + r.w)), y1 = Math.max(...all.map((r) => r.y + r.h));
+    const k = Math.min(MM_W / (x1 - x0), MM_H / (y1 - y0));
+    return { x0, y0, k };
+  });
+
+  /** Click or drag on the minimap: that point moves to the middle of the board. */
+  function mapDown(e: PointerEvent) {
+    if (!bounds) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const svg = e.currentTarget as SVGSVGElement;
+    try { svg.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    const go = (ev: PointerEvent) => {
+      const r = svg.getBoundingClientRect();
+      const wx = bounds.x0 + (ev.clientX - r.left) / bounds.k;
+      const wy = bounds.y0 + (ev.clientY - r.top) / bounds.k;
+      view.x = (vpSize.w - view.reserve) / 2 - wx * view.z;
+      view.y = vpSize.h / 2 - wy * view.z;
+    };
+    go(e);
+    const up = () => {
+      svg.removeEventListener('pointermove', go);
+      svg.removeEventListener('pointerup', up);
+    };
+    svg.addEventListener('pointermove', go);
+    svg.addEventListener('pointerup', up);
+  }
+
   function onKey(e: KeyboardEvent) {
     if (!free || (e.target as HTMLElement).closest('input, select, textarea')) return;
     if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomBy(1.2); }
@@ -148,7 +227,16 @@
       <button class="ghost small pct" onclick={() => (view.z = 1)} title="Back to 100% (Ctrl 0)">{Math.round(view.z * 100)}%</button>
       <button class="ghost small" onclick={() => zoomBy(1.2)} aria-label="Zoom in" title="Zoom in (Ctrl +)">+</button>
       <button class="ghost small" onclick={fit} title="Fit every site on screen (Shift 1)">Fit</button>
+      <button class="ghost small" class:on={showMap} onclick={() => (showMap = !showMap)} aria-pressed={showMap} title="Show or hide the minimap">Map</button>
     </div>
+    {#if showMap && bounds}
+      <svg class="minimap" width={MM_W} height={MM_H} style:right="{view.reserve + 10}px" role="img" aria-label="Minimap of the board; click to move there" onpointerdown={mapDown}>
+        {#each shapes as r}
+          <rect class="{r.kind} {r.cls}" x={(r.x - bounds.x0) * bounds.k} y={(r.y - bounds.y0) * bounds.k} width={Math.max(1, r.w * bounds.k)} height={Math.max(1, r.h * bounds.k)} rx="1.5" />
+        {/each}
+        <rect class="seen" x={(seen.x - bounds.x0) * bounds.k} y={(seen.y - bounds.y0) * bounds.k} width={seen.w * bounds.k} height={seen.h * bounds.k} />
+      </svg>
+    {/if}
   {/if}
 </div>
 
@@ -185,4 +273,19 @@
   }
   .zoombar button { min-width: 30px; padding: 3px 7px; border: 0; }
   .pct { font-variant-numeric: tabular-nums; min-width: 48px; }
+  .zoombar .on { color: var(--accent); }
+  .minimap {
+    position: absolute; bottom: 10px; z-index: 5;
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
+    cursor: pointer; touch-action: none;
+  }
+  .minimap .site { fill: color-mix(in srgb, var(--onprem) 18%, transparent); stroke: var(--onprem); stroke-width: 1; }
+  .minimap .site.aws { fill: color-mix(in srgb, var(--aws) 18%, transparent); stroke: var(--aws); }
+  .minimap .site.gcp { fill: color-mix(in srgb, var(--gcp) 18%, transparent); stroke: var(--gcp); }
+  .minimap .site.oci { fill: color-mix(in srgb, var(--oci) 18%, transparent); stroke: var(--oci); }
+  .minimap .site.azure { fill: color-mix(in srgb, var(--azure) 18%, transparent); stroke: var(--azure); }
+  .minimap .box { fill: var(--panel-2); stroke: var(--line); stroke-width: 0.5; }
+  .minimap .seen { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: var(--accent); stroke-width: 1.5; }
+  @media (max-width: 760px) { .minimap { display: none; } }
 </style>
