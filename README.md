@@ -7,6 +7,9 @@ A cost calculator for AWS, Google Cloud, Oracle Cloud and Microsoft Azure on one
 - Build the estimate like the architecture: a VPC holds a Kubernetes cluster, the cluster holds node groups, each node group holds its disks. Counts multiply down the tree, so 3 nodes with 2 disks each price 6 disks.
 - Drag a workload, or a whole VPC with everything inside, to another region or another cloud and see the new price. Items moved between clouds keep their size and get the nearest type, flagged for a check.
 - Compare on-demand, Savings Plans, Reserved Instances and committed use in one matrix next to the spec.
+- Attach add-ons to what they serve: a WAF with 3 rules on one load balancer and 1 rule on another, DDoS protection on a CDN, backups on a database.
+- Add each cloud's support plan to a site; the fee follows the provider's published rule.
+- Place cards freely inside a region, with guides, a minimap and arrow-key moves.
 - Share the estimate by link, or export it to Excel (full detail, a sheet per region) and PDF (one-page summary).
 - Each card shows whether the service runs in one zone or several, and the cloud's free tier for it.
 - A shared link also shows what the same design costs at today's prices.
