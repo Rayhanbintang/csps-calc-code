@@ -12,6 +12,8 @@ import { customPrice, POINTS } from './more';
 import { destField, vpcPrice } from './network';
 import { azureInstanceFee, geoOf } from './addons';
 import { awsOnly, awsOnlyOff } from './vm';
+import { DB_OFF } from './db';
+import { LB_OFF } from './network';
 
 const reg = (ctx: Ctx) => azure.region(ctx.region);
 const svc = (rows: AzRow[], service: string) => rows.filter((r) => r.s === service);
@@ -296,7 +298,10 @@ async function azContainersPrice(ctx: Ctx, item: Item): Promise<Priced> {
 }
 const ACI_ARM = 'Azure Container Instances runs x86 only.';
 
+const AZ_FN_ARM = 'Azure Functions offers no Arm hosting plan.';
+
 async function azFunctionsPrice(ctx: Ctx, item: Item): Promise<Priced> {
+  if (str(item.spec, 'arch') === 'arm') return unavailable(AZ_FN_ARM);
   const rows = svc(await reg(ctx), 'Functions').filter((r) => r.p === 'Functions');
   const { req, gbs } = fnUsage(item);
   const exec = azMeter(rows, (r) => r.m === 'Standard Total Executions');
@@ -322,6 +327,7 @@ async function azDbPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const hrs = Math.min(H, num(item.spec, 'hours', H));
   const q = item.qty;
   const gb = num(item.spec, 'gb', 100) * q;
+  if (DB_OFF.azure[engine]) return unavailable(DB_OFF.azure[engine]);
   if (engine.startsWith('sqlserver')) {
     const sql = svc(rows, 'SQL Database');
     const v = Math.max(1, Math.ceil(vcpu));
@@ -340,7 +346,6 @@ async function azDbPrice(ctx: Ctx, item: Item): Promise<Priced> {
     const notes = [`Azure SQL Database, ${tier} (Gen5). Memory comes with the vCore count (about 5.1 GB each).`];
     notes.push(ahb ? 'Azure Hybrid Benefit: your own SQL Server licence, so no licence line.' : 'This price includes the SQL Server licence; Azure Hybrid Benefit removes it.');
     if (bc) notes.push('Business Critical keeps three replicas, so high availability is in the price.');
-    if (engine === 'sqlserver-web') notes.push('Azure SQL Database has no Web edition; priced as General Purpose.');
     return priced(lines, { sku: `Azure SQL Database ${bc ? 'BC' : 'GP'} · ${v} vCore`, notes });
   }
   if (engine.startsWith('oracle') || engine.startsWith('aurora')) return unavailable(engine.startsWith('oracle') ? 'Oracle Database@Azure is bought through Oracle; not priced here.' : 'Aurora has no Azure equivalent; pick MySQL or PostgreSQL.');
@@ -357,8 +362,7 @@ async function azDbPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const nodes = ha ? 2 : 1;
   const lines: Line[] = [line(`${memOpt ? 'Memory Optimized' : 'General Purpose'}, ${v} vCore${ha ? ' × 2 (zone-redundant HA)' : ''}`, v * nodes * hrs * q, 'vCore-hours', must(azRate(core), 'flexible server vCore'))];
   if (gb) lines.push(line(`Storage${ha ? ' × 2' : ''}`, gb * nodes, 'GB-month', must(azRate(store), 'flexible server storage')));
-  const notes = engine === 'mariadb' ? ['Azure has no managed MariaDB; priced as MySQL.'] : [];
-  return priced(lines, { sku: `${pg ? 'PostgreSQL' : 'MySQL'} Flexible Server · ${v} vCore · ${v * (memOpt ? 8 : 4)} GiB`, notes });
+  return priced(lines, { sku: `${pg ? 'PostgreSQL' : 'MySQL'} Flexible Server · ${v} vCore · ${v * (memOpt ? 8 : 4)} GiB` });
 }
 
 /** Azure Cache for Redis sizes: name and GB. Standard and Premium run a primary and a replica. */
@@ -395,7 +399,8 @@ async function azLbPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const type = str(item.spec, 'type', 'app');
   const q = item.qty;
   const gb = num(item.spec, 'gb', 0) * q;
-  if (type === 'app' || type === 'classic') {
+  if (LB_OFF.azure[type]) return unavailable(LB_OFF.azure[type]);
+  if (type === 'app') {
     const rows = svc(await reg(ctx), 'Application Gateway');
     const fixed = azMeter(rows, (r) => r.p === 'Application Gateway Standard v2' && r.m === 'Standard Fixed Cost');
     const cu = azMeter(rows, (r) => r.p === 'Application Gateway Standard v2' && r.m === 'Standard Capacity Units');
@@ -688,14 +693,15 @@ export const azureImpls: Record<string, ProviderImpl> = {
   file: { product: 'Azure Files', price: azFilePrice },
   k8s: { product: 'Azure Kubernetes Service / ARO', price: azK8sPrice },
   containers: { product: 'Azure Container Instances', off: { arch: { arm: ACI_ARM } }, price: azContainersPrice },
-  functions: { product: 'Azure Functions', price: azFunctionsPrice },
+  functions: { product: 'Azure Functions', off: { arch: { arm: AZ_FN_ARM } }, price: azFunctionsPrice },
   db: {
     product: 'Azure Database / Azure SQL',
+    off: { engine: DB_OFF.azure },
     fields: async (_c, spec) => (str(spec, 'engine').startsWith('sqlserver') ? [{ key: 'azure.ahb', label: 'Azure Hybrid Benefit (own SQL Server licence)', type: 'select', options: opts(['no', 'No'], ['yes', 'Yes']) }] : []),
     models: [{ model: 'od', label: 'Pay as you go' }], price: azDbPrice, adopt: async (_c, item) => ({ ...item, pricing: { model: 'od' } }) },
   cache: { product: 'Azure Cache for Redis', price: azCachePrice },
   vpc: { product: 'Azure Virtual Network', price: (ctx, item) => vpcPrice(ctx, item, 'Azure does not charge for virtual networks.') },
-  lb: { product: 'Azure Load Balancer / Application Gateway', price: azLbPrice },
+  lb: { product: 'Azure Load Balancer / Application Gateway', off: { type: LB_OFF.azure }, price: azLbPrice },
   nat: { product: 'Azure NAT Gateway', price: azNatPrice },
   ip: { product: 'Azure Public IP', price: azIpPrice },
   endpoint: { product: 'Azure Private Link', price: azEndpointPrice },

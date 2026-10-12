@@ -87,6 +87,9 @@ function rosaPrice(item: Item): Priced {
   ], { sku: 'ROSA, hosted control planes', notes });
 }
 
+/** Cloud Run and Cloud Run functions run Linux x86-64 only (Cloud Run container contract). */
+const GCP_ARM = 'Cloud Run runs x86-64 containers only.';
+
 // =====================================================================================
 // Functions
 // =====================================================================================
@@ -167,7 +170,9 @@ export const functions: Service = {
     },
     gcp: {
       product: 'Cloud Run functions',
+      off: { arch: { arm: GCP_ARM } },
       price: async (ctx, item) => {
+        if (str(item.spec, 'arch') === 'arm') return unavailable(GCP_ARM);
         const rows = await gcp.region(ctx.region);
         const g = await gcp.global();
         const { req, ms, mb, gbs } = fnUsage(item);
@@ -242,7 +247,9 @@ export const containers: Service = {
     },
     gcp: {
       product: 'Cloud Run',
+      off: { arch: { arm: GCP_ARM } },
       price: async (ctx, item) => {
+        if (str(item.spec, 'arch') === 'arm') return unavailable(GCP_ARM);
         const rows = await gcp.region(ctx.region);
         const { tasks, hrs, vcpu, gb } = ctUsage(item);
         const s = tasks * hrs * 3600;
@@ -258,10 +265,13 @@ export const containers: Service = {
         const rows = await oci.all();
         const { tasks, hrs, vcpu, gb } = ctUsage(item);
         const ocpu = Math.max(1, Math.ceil(vcpu / 2));
+        // Arm runs on the Ampere A1 shape, x86 on E4; both bill per OCPU and GB of memory.
+        const arm = str(item.spec, 'arch') === 'arm';
+        const [shape, cpuPart, memPart] = arm ? ['A1', 'B93297', 'B93298'] : ['E4', 'B93113', 'B93114'];
         return priced([
-          line(`E4 OCPU (${ocpu} per container)`, tasks * ocpu * hrs, 'OCPU-hours', must(ociRate(ociPart(rows, 'B93113')), 'E4 OCPU')),
-          line('Memory', tasks * gb * hrs, 'GB-hours', must(ociRate(ociPart(rows, 'B93114')), 'E4 memory')),
-        ], { sku: 'Container Instances on E4 Flex', notes: ['OCI bills container instances at the shape price; 1 OCPU = 2 vCPU.'] });
+          line(`${shape} OCPU (${ocpu} per container)`, tasks * ocpu * hrs, 'OCPU-hours', must(ociRate(ociPart(rows, cpuPart)), `${shape} OCPU`)),
+          line('Memory', tasks * gb * hrs, 'GB-hours', must(ociRate(ociPart(rows, memPart)), `${shape} memory`)),
+        ], { sku: `Container Instances on ${shape} Flex`, notes: ['OCI bills container instances at the shape price; 1 OCPU = 2 vCPU.'] });
       },
     },
   },

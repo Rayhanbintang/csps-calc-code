@@ -5,10 +5,10 @@
 import type { Provider } from './types';
 
 const HAVE: Partial<Record<Provider, Set<string>>> = {
-  aws: new Set(["apigw", "cache", "containers", "db", "ddos", "disk", "dns", "endpoint", "file", "functions", "interconnect", "ip", "k8s", "lb", "monitoring", "nat", "notify", "object", "queue", "vm", "vpc", "vpn", "waf"]),
-  gcp: new Set(["apigw", "cache", "containers", "db", "ddos", "disk", "dns", "endpoint", "file", "functions", "interconnect", "ip", "k8s", "lb", "monitoring", "nat", "notify", "object", "queue", "vm", "vpc", "vpn", "waf"]),
+  aws: new Set(["apigw", "backup", "cache", "cdn", "containers", "db", "ddos", "disk", "dns", "endpoint", "file", "functions", "interconnect", "ip", "k8s", "lb", "monitoring", "nat", "notify", "object", "queue", "vm", "vpc", "vpn", "waf"]),
+  gcp: new Set(["apigw", "cache", "cdn", "containers", "db", "ddos", "disk", "dns", "egress", "endpoint", "file", "functions", "interconnect", "ip", "k8s", "lb", "monitoring", "nat", "notify", "object", "queue", "vm", "vpc", "vpn", "waf"]),
   oci: new Set(["apigw", "containers", "db", "ddos", "disk", "dns", "egress", "endpoint", "file", "functions", "interconnect", "ip", "k8s", "lb", "monitoring", "nat", "notify", "object", "queue", "vm", "vpc", "vpn", "waf"]),
-  azure: new Set(["apigw", "cache", "containers", "db", "ddos", "disk", "dns", "egress", "endpoint", "file", "functions", "interconnect", "ip", "k8s", "lb", "monitoring", "nat", "notify", "object", "queue", "vm", "vpc", "vpn", "waf"]),
+  azure: new Set(["apigw", "backup", "cache", "cdn", "containers", "db", "ddos", "disk", "dns", "egress", "endpoint", "file", "functions", "interconnect", "ip", "k8s", "lb", "monitoring", "nat", "notify", "object", "queue", "vm", "vpc", "vpn", "waf"]),
 };
 
 /** URL of the provider's icon for a service, or undefined when there is none. */

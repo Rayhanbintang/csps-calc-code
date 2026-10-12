@@ -95,6 +95,8 @@ func Ask(ctx context.Context, key, summary string, history []Turn, question stri
 	msgs = append(msgs, Turn{Role: "user", Content: question})
 	body, _ := json.Marshal(map[string]any{
 		"model": Model, "messages": msgs, "temperature": 0.3, "max_completion_tokens": 1200,
+		// gpt-oss reasons before it answers; low effort leaves the token cap for the answer.
+		"reasoning_effort": "low",
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {

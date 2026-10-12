@@ -142,12 +142,7 @@ async function awsObject(ctx: Ctx, item: Item): Promise<Priced> {
   let [key, name, req] = storage[cls];
   let row = awsFind(rows, key);
   const notes: string[] = [];
-  if (!row && cls === 'archive') {
-    // Not every region sells Deep Archive; Glacier Flexible Retrieval is the next tier up.
-    [key, name, req] = ['TimedStorage-GlacierByteHrs', 'S3 Glacier Flexible Retrieval', 'GLACIER-'];
-    row = awsFind(rows, key);
-    notes.push('Glacier Deep Archive is not sold in this region; priced as Glacier Flexible Retrieval.');
-  }
+  if (!row && cls === 'archive') return unavailable(`S3 Glacier Deep Archive is not sold in ${ctx.info?.name ?? ctx.region}.`);
   const lines: Line[] = [tierLine(`${name} storage`, gb, 'GB-month', must(awsCost(row, gb), name))];
   const puts = num(item.spec, 'puts', 0) * item.qty;
   const gets = num(item.spec, 'gets', 0) * item.qty;
@@ -178,16 +173,18 @@ async function gcpObject(ctx: Ctx, item: Item): Promise<Priced> {
   return priced(lines, { sku: `Cloud Storage ${name}, regional` });
 }
 
+const OCI_COLD = 'OCI Object Storage has no instant-retrieval archive tier.';
+
 async function ociObject(_ctx: Ctx, item: Item): Promise<Priced> {
   const rows = await oci.all();
   const gb = num(item.spec, 'gb', 1000) * item.qty;
   const cls = str(item.spec, 'class', 'hot');
-  const [part, name] = ({ hot: ['B91628', 'Standard'], cool: ['B93000', 'Infrequent Access'], cold: ['B93000', 'Infrequent Access'], archive: ['B91633', 'Archive'] } as Record<string, [string, string]>)[cls];
+  if (cls === 'cold') return unavailable(OCI_COLD);
+  const [part, name] = ({ hot: ['B91628', 'Standard'], cool: ['B93000', 'Infrequent Access'], archive: ['B91633', 'Archive'] } as Record<string, [string, string]>)[cls];
   const lines: Line[] = [tierLine(`Object Storage ${name}`, gb, 'GB-month', must(ociCost(ociPart(rows, part), gb), name))];
   const reqs = (num(item.spec, 'puts', 0) + num(item.spec, 'gets', 0)) * item.qty;
   if (reqs) lines.push(tierLine('Requests', reqs, 'requests', must(ociCost(ociPart(rows, 'B91627'), reqs / 10000), 'requests')));
-  const notes = cls === 'cold' ? ['OCI has no instant-retrieval archive tier; priced as Infrequent Access.'] : [];
-  return priced(lines, { sku: `Object Storage ${name}`, notes });
+  return priced(lines, { sku: `Object Storage ${name}` });
 }
 
 export const object: Service = {
@@ -205,7 +202,7 @@ export const object: Service = {
   providers: {
     aws: { product: 'Amazon S3', price: awsObject },
     gcp: { product: 'Cloud Storage', price: gcpObject },
-    oci: { product: 'OCI Object Storage', price: ociObject },
+    oci: { product: 'OCI Object Storage', off: { class: { cold: OCI_COLD } }, price: ociObject },
   },
 };
 

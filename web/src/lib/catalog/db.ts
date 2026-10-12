@@ -21,6 +21,20 @@ const engines = opts(
   ['aurora-postgres', 'Aurora PostgreSQL (AWS only)'],
 );
 
+/** Engines a cloud does not sell as a managed database: greyed out in the picker and
+ *  refused by the pricer, so a cloud switch stops instead of pricing another engine. */
+const AURORA = 'Aurora is an AWS engine.';
+export const DB_OFF: Record<'gcp' | 'oci' | 'azure', Record<string, string>> = {
+  gcp: { mariadb: 'Cloud SQL has no MariaDB.', 'oracle-se2': 'Cloud SQL has no Oracle Database.', 'aurora-mysql': AURORA, 'aurora-postgres': AURORA },
+  oci: { mariadb: 'OCI has no managed MariaDB.', 'sqlserver-web': 'OCI sells SQL Server Standard and Enterprise images; there is no Web edition.', 'aurora-mysql': AURORA, 'aurora-postgres': AURORA },
+  azure: {
+    mariadb: 'Azure has no managed MariaDB; Azure Database for MariaDB was retired.',
+    'sqlserver-web': 'Azure SQL Database has no Web edition.',
+    'oracle-se2': 'Oracle Database@Azure is bought through Oracle; not priced here.',
+    'aurora-mysql': AURORA, 'aurora-postgres': AURORA,
+  },
+};
+
 function ha(spec: Spec): boolean {
   return str(spec, 'ha', 'single') === 'multi';
 }
@@ -177,7 +191,8 @@ async function rdsPrice(ctx: Ctx, item: Item): Promise<Priced> {
 
 async function cloudSqlPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const engine = str(item.spec, 'engine', 'mysql');
-  const name = engine === 'postgres' ? 'PostgreSQL' : engine.startsWith('sqlserver') ? 'SQL Server' : engine === 'mysql' || engine === 'mariadb' ? 'MySQL' : '';
+  if (DB_OFF.gcp[engine]) return unavailable(DB_OFF.gcp[engine]);
+  const name = engine === 'postgres' ? 'PostgreSQL' : engine.startsWith('sqlserver') ? 'SQL Server' : engine === 'mysql' ? 'MySQL' : '';
   if (!name) return unavailable('Cloud SQL runs MySQL, PostgreSQL and SQL Server.');
   const rows = await gcp.region(ctx.region);
   const multi = ha(item.spec);
@@ -207,7 +222,6 @@ async function cloudSqlPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const gb = num(item.spec, 'gb', 100) * q;
   if (gb > 0) lines.push(line(`SSD storage${multi ? ' (HA)' : ''}`, gb, 'GiB-month', must(gcpRate(disk), 'Cloud SQL storage')));
   const notes = p.model === 'cud' ? [`Committed use: ${Math.round((1 - cud) * 100)}% off vCPU and memory, from Google's commitment SKU.`] : [];
-  if (engine === 'mariadb') notes.push('Cloud SQL has no MariaDB; priced as MySQL.');
   if (engine.startsWith('sqlserver')) {
     const ed = { 'sqlserver-std': 'Standard', 'sqlserver-ent': 'Enterprise', 'sqlserver-web': 'Web' }[engine]!;
     const g = await gcp.global();
@@ -225,21 +239,21 @@ async function cloudSqlPrice(ctx: Ctx, item: Item): Promise<Priced> {
 
 async function ociDbPrice(_ctx: Ctx, item: Item): Promise<Priced> {
   const engine = str(item.spec, 'engine', 'mysql');
+  if (DB_OFF.oci[engine]) return unavailable(DB_OFF.oci[engine]);
   const rows = await oci.all();
   const vcpu = num(item.spec, 'vcpu', 2);
   const q = item.qty;
   const hrs = Math.min(H, num(item.spec, 'hours', H));
   const gb = num(item.spec, 'gb', 100) * q;
   const multi = ha(item.spec);
-  if (engine === 'mysql' || engine === 'mariadb') {
+  if (engine === 'mysql') {
     // HeatWave MySQL bills per ECPU; a high-availability system runs three instances.
     const nodes = multi ? 3 : 1;
     const lines: Line[] = [
       line(`MySQL HeatWave, ${vcpu} ECPU${multi ? ' × 3 (HA)' : ''}`, vcpu * nodes * hrs * q, 'ECPU-hours', must(ociRate(ociPart(rows, 'B108030')), 'MySQL ECPU')),
     ];
     if (gb) lines.push(line(`Storage${multi ? ' × 3 (HA)' : ''}`, gb * nodes, 'GB-month', must(ociRate(ociPart(rows, 'B92426')), 'MySQL storage')));
-    const notes = engine === 'mariadb' ? ['OCI has no managed MariaDB; priced as MySQL HeatWave.'] : [];
-    notes.push('Memory comes with the ECPU shape.');
+    const notes = ['Memory comes with the ECPU shape.'];
     return priced(lines, { sku: `MySQL HeatWave · ${vcpu} ECPU`, notes });
   }
   if (engine === 'postgres') {
@@ -317,12 +331,14 @@ export const db: Service = {
     },
     gcp: {
       product: 'Cloud SQL',
+      off: { engine: DB_OFF.gcp },
       models: [{ model: 'od', label: 'On-demand' }, { model: 'cud', label: 'Committed use', terms: [1, 3] }],
       price: cloudSqlPrice,
       adopt: async (_c, item) => ({ ...item, pricing: { model: 'od' }, check: item.spec.engine?.toString().startsWith('aurora') ? 'Aurora has no Google Cloud equivalent; pick an engine.' : undefined }),
     },
     oci: {
       product: 'OCI Database',
+      off: { engine: DB_OFF.oci },
       fields: async (_c, spec) => (str(spec, 'engine').startsWith('oracle')
         ? [{ key: 'oci.oracle', label: 'Oracle edition', type: 'select', options: opts(['se', 'Standard Edition'], ['ee', 'Enterprise Edition'], ['hp', 'Enterprise Edition High Performance'], ['byol', 'Bring your own licence']) }]
         : []),

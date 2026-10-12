@@ -279,3 +279,29 @@ describe.skipIf(!hasDedicated)('Dedicated Instances', () => {
     expect(p.unavailable).toMatch(/on demand only/);
   });
 });
+
+// Rayhan, 2026-10-12: if the cloud does not sell it, the calculator does not price it.
+describe.skipIf(!have)('nothing a cloud does not sell gets a price', () => {
+  const cases: [Provider, string, string, Item['spec'], RegExp][] = [
+    ['gcp', 'asia-southeast2', 'db', { engine: 'mariadb' }, /no MariaDB/],
+    ['oci', 'ap-singapore-1', 'db', { engine: 'mariadb' }, /no managed MariaDB/],
+    ['azure', 'indonesiacentral', 'db', { engine: 'mariadb' }, /no managed MariaDB/],
+    ['azure', 'indonesiacentral', 'db', { engine: 'sqlserver-web' }, /no Web edition/],
+    ['gcp', 'asia-southeast2', 'lb', { type: 'classic' }, /no Classic Load Balancer/],
+    ['oci', 'ap-singapore-1', 'lb', { type: 'classic' }, /no Classic Load Balancer/],
+    ['azure', 'indonesiacentral', 'lb', { type: 'classic' }, /no Classic Load Balancer/],
+    ['oci', 'ap-singapore-1', 'object', { class: 'cold' }, /no instant-retrieval archive/],
+    ['gcp', 'asia-southeast2', 'containers', { arch: 'arm' }, /x86-64 containers only/],
+    ['gcp', 'asia-southeast2', 'functions', { arch: 'arm' }, /x86-64 containers only/],
+    ['azure', 'indonesiacentral', 'functions', { arch: 'arm' }, /no Arm hosting plan/],
+  ];
+  for (const [p, r, svc, spec, re] of cases) {
+    it(`${p} ${svc} ${JSON.stringify(spec)}`, async () => {
+      expect((await price(p, r, item(svc, spec))).unavailable).toMatch(re);
+    });
+  }
+  it('OCI prices Arm containers on Ampere A1, not on E4', async () => {
+    const p = await price('oci', 'ap-singapore-1', item('containers', { arch: 'arm' }));
+    expect(p.sku).toBe('Container Instances on A1 Flex');
+  });
+});

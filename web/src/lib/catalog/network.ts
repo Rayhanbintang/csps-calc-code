@@ -68,6 +68,13 @@ export async function vpcPrice(ctx: Ctx, item: Item, freeNote: string): Promise<
 // Load balancer
 // =====================================================================================
 
+/** Load balancer types a cloud does not sell. Classic is AWS's legacy type. */
+const CLASSIC = (c: string) => `${c} has no Classic Load Balancer; Classic is an AWS legacy type.`;
+export const LB_OFF: Record<'gcp' | 'oci' | 'azure', Record<string, string>> = {
+  gcp: { gw: 'Google Cloud has no gateway load balancer; use Network Security Integration or a network load balancer.', classic: CLASSIC('Google Cloud') },
+  oci: { gw: 'OCI has no gateway load balancer.', classic: CLASSIC('OCI') },
+  azure: { classic: CLASSIC('Azure') },
+};
 const lbTypes = opts(['app', 'Application (HTTP/HTTPS, layer 7)'], ['net', 'Network (TCP/UDP, layer 4)'], ['gw', 'Gateway (inline appliances)'], ['classic', 'Classic (AWS legacy)']);
 
 export const lb: Service = {
@@ -105,9 +112,10 @@ export const lb: Service = {
     },
     gcp: {
       product: 'Cloud Load Balancing',
+      off: { type: LB_OFF.gcp },
       price: async (ctx, item) => {
         const type = str(item.spec, 'type', 'app');
-        if (type === 'gw') return unavailable('Google Cloud has no gateway load balancer; use Network Security Integration or a network load balancer.');
+        if (LB_OFF.gcp[type]) return unavailable(LB_OFF.gcp[type]);
         const rows = await gcp.region(ctx.region);
         const q = item.qty;
         const kind = type === 'net' ? 'Regional External Passthrough Network Load Balancer' : 'Regional External Application Load Balancer';
@@ -118,16 +126,16 @@ export const lb: Service = {
         const gb = num(item.spec, 'gb', 0) * q;
         const lines: Line[] = [line('Forwarding rules (first 5)', H * q, 'hours', must(gcpRate(rule), 'forwarding rule'))];
         if (gb) lines.push(line('Data processed', gb, 'GiB', must(gcpRate(inb), 'data processing')));
-        const notes = type === 'classic' ? ['Priced as a regional external Application Load Balancer.'] : [];
-        return priced(lines, { sku: kind, notes });
+        return priced(lines, { sku: kind });
       },
     },
     oci: {
       product: 'OCI Load Balancer',
+      off: { type: LB_OFF.oci },
       price: async (_ctx, item) => {
         const type = str(item.spec, 'type', 'app');
         if (type === 'net') return free('OCI Network Load Balancer', 'Network Load Balancer', 'OCI does not charge for the Network Load Balancer.');
-        if (type === 'gw') return unavailable('OCI has no gateway load balancer.');
+        if (LB_OFF.oci[type]) return unavailable(LB_OFF.oci[type]);
         const rows = await oci.all();
         const q = item.qty;
         const mbps = Math.max(10, num(item.spec, 'mbps', 10));
