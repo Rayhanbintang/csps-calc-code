@@ -22,8 +22,21 @@
   let mode = $state<'same' | 'scale'>('same');
   let pct = $state(50);
   let inside = $state(true);
-  /** Where a copied site goes: this tab or another open one. */
+  /** Where a copied site or box goes: this tab or another open one. */
   let into = $state('');
+  /** For a box: the site it goes into ('' = a new site in another tab, its own site here). */
+  let site = $state('');
+  const boxSites = $derived.by(() => {
+    if (req?.kind !== 'box') return [];
+    const b = findBox(req.id);
+    const est = into ? app.tabs.find((t) => t.id === into)?.est : app.est;
+    return b && est ? est.accounts.filter((a) => a.provider === b.acc.provider) : [];
+  });
+  // Another tab: default to its first site on the same cloud, else a new site.
+  $effect(() => {
+    void into;
+    site = req?.kind === 'box' ? (into ? boxSites[0]?.id ?? '' : findBox(req.id)?.acc.id ?? '') : '';
+  });
   const pctOk = $derived(Number.isFinite(pct) && pct > 0 && pct <= 1000);
 
   function close() {
@@ -31,13 +44,14 @@
     mode = 'same';
     inside = true;
     into = '';
+    site = '';
   }
 
   function run() {
     if (!req || (mode === 'scale' && !pctOk)) return;
     const f = mode === 'same' ? 1 : pct / 100;
     if (req.kind === 'item') copyItem(req.id, inside, f);
-    else if (req.kind === 'box') copyBox(req.id, f);
+    else if (req.kind === 'box') copyBox(req.id, f, into || app.tab, site || undefined);
     else copySite(req.id, f, into || app.tab);
     close();
   }
@@ -63,11 +77,19 @@
       {#if mode === 'scale'}
         <p class="small muted">Counts, storage, requests and data transfer change; machine types and sizes stay. Counts round up.</p>
       {/if}
-      {#if req.kind === 'site' && app.tabs.length > 1}
+      {#if (req.kind === 'site' || req.kind === 'box') && app.tabs.length > 1}
         <label class="opt">Into
-          <select bind:value={into} aria-label="Tab to copy the site into">
+          <select bind:value={into} aria-label="Tab to copy into">
             <option value="">This tab</option>
             {#each app.tabs.filter((t) => t.id !== app.tab) as t (t.id)}<option value={t.id}>{tabName(t)}</option>{/each}
+          </select>
+        </label>
+      {/if}
+      {#if req.kind === 'box' && (into || boxSites.length > 1)}
+        <label class="opt">Site
+          <select bind:value={site} aria-label="Site to copy the box into">
+            {#each boxSites as a (a.id)}<option value={a.id}>{a.label || 'Unnamed site'}</option>{/each}
+            {#if into}<option value="">A new site</option>{/if}
           </select>
         </label>
       {/if}

@@ -7,12 +7,12 @@
   import { money } from '../lib/report';
   import ItemCard from './ItemCard.svelte';
   import RegionSelect from './RegionSelect.svelte';
-  import { drag } from '../lib/drag.svelte';
+  import { drag, onPlace } from '../lib/drag.svelte';
   import { blockerMessage, swapAccount, swapBlockers } from '../lib/swap';
   import type { Account } from '../lib/types';
   import { untrack } from 'svelte';
   import Board from './Board.svelte';
-  import { BOX_INSET, CARD_MIN_W, arrowStep, boxWidth, freezeCards, grab, grabWidth, guide, layoutCards, needsPlace, orderCards, place, settleCards, siteWidth, snap } from '../lib/board.svelte';
+  import { BOX_INSET, BOX_W, CARD_GAP, CARD_MIN_W, GRID, arrowStep, boxWidth, freezeCards, grab, grabWidth, guide, layoutCards, needsPlace, orderCards, place, settleCards, siteWidth, snap } from '../lib/board.svelte';
   import type { Rect } from '../lib/board.svelte';
   import { find } from '../lib/store.svelte';
   import type { Item, RegionBox } from '../lib/types';
@@ -65,6 +65,35 @@
       others: () => box.items.filter((o) => o.id !== item.id && o.at).map((o) => ({ x: o.at!.x, y: o.at!.y, w: o.at!.w ?? CARD_MIN_W, h: cardH(o.id) })),
     });
   }
+
+  /** A card dropped on empty box space lands at the released point, snapped to the grid;
+   *  several cards dropped together stack from there. */
+  $effect(() => {
+    onPlace((boxId, ids, at) => {
+      const box = app.est.accounts.flatMap((a) => a.regions).find((b) => b.id === boxId);
+      if (!box) return;
+      freezeCards(box.items, layout(box).slots);
+      const inner = boxWidth(box) - BOX_INSET;
+      // Snap across to the box edge or a neighbour's edge, so columns stay lined up.
+      const others = box.items.filter((o) => !ids.includes(o.id) && o.at);
+      const edges = [0, ...others.flatMap((o) => [o.at!.x, o.at!.x + (o.at!.w ?? CARD_MIN_W) + CARD_GAP])]
+        .filter((x) => x + CARD_MIN_W <= inner);
+      const x = edges.reduce((best, e) => (Math.abs(e - at.x) < Math.abs(best - at.x) ? e : best), 0);
+      const w = Math.max(CARD_MIN_W, Math.min(BOX_W - BOX_INSET, inner - x));
+      // Within two grid steps of a neighbour's top or bottom, line up with it.
+      const tops = others.flatMap((o) => [o.at!.y, o.at!.y + cardH(o.id) + CARD_GAP]);
+      const near = tops.find((t) => Math.abs(t - at.y) <= 2 * GRID);
+      let y = near ?? at.y;
+      for (const id of ids) {
+        const it = box.items.find((i) => i.id === id);
+        if (!it) continue;
+        it.at = { x, y, w };
+        settleCards(box.items, id, cardH);
+        y = it.at.y + cardH(id) + CARD_GAP;
+      }
+    });
+    return () => onPlace(null);
+  });
 
   /** Arrow keys on a card's grip, or on the selected top-level card, move it one step. */
   function nudgeCard(box: RegionBox, item: Item, dx: number, dy: number) {

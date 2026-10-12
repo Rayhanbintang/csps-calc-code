@@ -7,6 +7,7 @@
 // drag starts after a long press, so a swipe still scrolls the page.
 import { addItem, find, moveItems } from './store.svelte';
 import { canHold, contains } from './tree';
+import { snap, view } from './board.svelte';
 
 /** A place a drag can land. */
 export interface DropTarget {
@@ -19,7 +20,16 @@ export interface DropTarget {
   /** Position in the list; undefined = the end. */
   index?: number;
   edge?: 'before' | 'after';
+  /** Box zones on the board: the released point inside the box's card area, snapped. */
+  at?: { x: number; y: number };
   ok: boolean;
+}
+
+/** The canvas places cards dropped on empty box space at the released point (it knows
+ *  the card heights needed to keep them from overlapping). */
+let placeHook: ((boxId: string, ids: string[], at: { x: number; y: number }) => void) | null = null;
+export function onPlace(fn: typeof placeHook): void {
+  placeHook = fn;
 }
 
 export const drag = $state({
@@ -58,7 +68,13 @@ function targetAt(x: number, y: number): DropTarget | null {
   if (!el) return null;
   const d = el.dataset;
   const boxId = d.box ?? '';
-  if (d.drop === 'box') return { kind: 'box', boxId, ok: accepts(undefined) };
+  if (d.drop === 'box') {
+    const area = el.querySelector<HTMLElement>(':scope > .items.free');
+    if (!area) return { kind: 'box', boxId, ok: accepts(undefined) };
+    const r = area.getBoundingClientRect();
+    const at = { x: Math.max(0, snap((x - r.left) / view.z)), y: Math.max(0, snap((y - r.top) / view.z)) };
+    return { kind: 'box', boxId, at, ok: accepts(undefined) };
+  }
   if (d.drop === 'inside') return { kind: 'inside', boxId, parentId: d.item, itemId: d.item, ok: accepts(d.item) };
   if (d.drop === 'card') {
     const itemId = d.item!;
@@ -111,8 +127,15 @@ function autoScroll() {
 function drop() {
   const t = drag.target;
   if (!t?.ok) return;
-  if (drag.svc) addItem(t.boxId, drag.svc, undefined, t.parentId, t.index);
-  else if (drag.ids) moveItems([...drag.ids], { boxId: t.boxId, parentId: t.parentId }, t.index);
+  let ids: string[] = [];
+  if (drag.svc) {
+    const id = addItem(t.boxId, drag.svc, undefined, t.parentId, t.index);
+    if (id) ids = [id];
+  } else if (drag.ids) {
+    ids = [...drag.ids];
+    moveItems(ids, { boxId: t.boxId, parentId: t.parentId }, t.index);
+  }
+  if (t.kind === 'box' && t.at && ids.length) placeHook?.(t.boxId, ids, t.at);
   if (t.kind === 'inside' && t.itemId) {
     const f = find(t.itemId);
     if (f?.item.folded) f.item.folded = false;

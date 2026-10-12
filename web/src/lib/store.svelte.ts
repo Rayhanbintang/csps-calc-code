@@ -350,13 +350,29 @@ export function copyItem(itemId: string, withInside: boolean, f = 1): void {
 }
 
 /** Copies a region box into the same site, to the right of its boxes. */
-export function copyBox(boxId: string, f = 1): void {
+/** Copies a region box into a site on the same cloud: its own site (the default), another
+ *  site of this tab, or a site of another tab. `accId` '' in another tab means a new site
+ *  there, named like the source site. */
+export function copyBox(boxId: string, f = 1, tabId = app.tab, accId?: string): void {
   const found = findBox(boxId);
   if (!found) return;
   const copy = cloneBox($state.snapshot(found.box) as RegionBox, f);
-  copy.at = { ...freeBoxSpot(found.acc), w: boxWidth(found.box) };
   delete copy.swap;
-  found.acc.regions.push(copy);
+  const other = tabId !== app.tab ? app.tabs.find((t) => t.id === tabId) : undefined;
+  const est = other ? other.est : app.est;
+  const same = (a: Account) => a.provider === found.acc.provider;
+  let dest = accId ? est.accounts.find((a) => a.id === accId && same(a)) : other ? undefined : found.acc;
+  if (!dest) {
+    dest = { id: uid('a'), provider: found.acc.provider, label: found.acc.label, ref: found.acc.ref, regions: [], at: freeSpot(est) };
+    est.accounts.push(dest);
+    dest = est.accounts[est.accounts.length - 1];
+  }
+  copy.at = { ...freeBoxSpot(dest), w: boxWidth(found.box) };
+  dest.regions.push(copy);
+  if (other) {
+    saveTabs();
+    void repriceTabs();
+  }
 }
 
 /** Copies a whole site to a free spot on the right of the board, in this tab or in
