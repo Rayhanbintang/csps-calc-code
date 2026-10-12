@@ -55,6 +55,7 @@ var global = []string{"Load Balancer", "NAT Gateway", "Virtual Network", "Azure 
 var vmLicences = []string{
 	"SQL Server Standard", "SQL Server Enterprise", "SQL Server Web",
 	"Red Hat Enterprise Linux", "SUSE Linux Enterprise Server Standard", "Ubuntu Pro",
+	"Azure Red Hat OpenShift General Purpose", // ARO worker licence, per vCPU
 }
 
 // dedupe drops rows that repeat exactly; the API lists some billing-zone meters twice.

@@ -75,6 +75,32 @@ export function* walk(items: Item[], mult = 1, depth = 0, parent: Item | null = 
   }
 }
 
+/** The item as its pricer sees it: without children, its count times every container
+ *  above it, plus what the pricer needs from inside it (an OpenShift cluster bills per
+ *  worker vCPU, so it gets the vCPUs of the VMs inside it, per cluster). */
+export function pricedItem(n: Node): Item {
+  const { children, ...flat } = n.item;
+  const item: Item = { ...flat, qty: n.item.qty * n.mult };
+  if (n.item.svc === 'k8s' && n.item.spec.flavor === 'openshift') {
+    const w = workers(children ?? []);
+    item.spec = { ...item.spec, 'workers.n': w.n, 'workers.vcpu': w.vcpu };
+  }
+  // A database's backup is billed at that engine's own backup rate.
+  if (n.item.svc === 'backup' && n.parent?.svc === 'db') item.spec = { ...item.spec, 'db.engine': String(n.parent.spec.engine ?? '') };
+  return item;
+}
+
+/** VMs in the list and below it, and their vCPUs, counts multiplied through. */
+export function workers(items: Item[]): { n: number; vcpu: number } {
+  let n = 0, vcpu = 0;
+  for (const x of walk(items)) {
+    if (x.item.svc !== 'vm') continue;
+    n += x.item.qty * x.mult;
+    vcpu += x.item.qty * x.mult * (Number(x.item.spec.vcpu) || 0);
+  }
+  return { n, vcpu };
+}
+
 export function findNode(items: Item[], id: string): Node | undefined {
   for (const n of walk(items)) if (n.item.id === id) return n;
   return undefined;

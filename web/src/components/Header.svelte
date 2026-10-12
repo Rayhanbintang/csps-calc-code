@@ -1,7 +1,9 @@
 <script lang="ts">
   import { app, prices, newTab, importAwsTemplate } from '../lib/store.svelte';
   import { buildReport, dateOnly } from '../lib/report';
-  import { download, saveEstimate } from '../lib/api';
+  import { download, fillAwsTemplate, saveEstimate } from '../lib/api';
+  import { ec2Rows } from '../lib/awsexport';
+  import AwsFiles from './AwsFiles.svelte';
 
   let shareUrl = $state('');
   let working = $state('');
@@ -30,14 +32,28 @@
     return buildReport($state.snapshot(app.est), prices, app.manifest);
   }
 
-  let picker: HTMLInputElement;
+  let awsOpen = $state(false);
   let imported = $state<{ text: string; skipped: string[] } | null>(null);
 
-  function pickFile(e: Event) {
-    const input = e.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
+  /** Fills the visitor's copy of AWS's EC2 template with this tab's AWS VMs. */
+  function fillTemplate(file: File) {
+    imported = null;
+    const res = ec2Rows($state.snapshot(app.est), prices);
+    if (!res.rows.length) {
+      problem = 'This tab has no AWS virtual machines to put in the template.';
+      imported = res.skipped.length ? { text: '', skipped: res.skipped } : null;
+      return;
+    }
+    run("Filling AWS's template…", async () => {
+      await fillAwsTemplate(file, res.rows);
+      imported = {
+        text: `Filled ${res.rows.length} row${res.rows.length === 1 ? '' : 's'} of AWS's EC2 template. Upload the file in the AWS Pricing Calculator.`,
+        skipped: [...res.skipped, ...res.changed],
+      };
+    });
+  }
+
+  function importFile(file: File) {
     imported = null;
     run('Reading the template…', async () => {
       const res = await importAwsTemplate(await file.arrayBuffer());
@@ -75,13 +91,13 @@
   <span class="asof small muted" title="Prices refresh every day from each provider's public price list.">Prices as of {dateOnly(asOf)}</span>
   <div class="actions">
     <button onclick={newTab} title="Open a new, empty estimate in another tab">New</button>
-    <button onclick={() => picker.click()} disabled={!!working} title="Import the AWS Pricing Calculator EC2 bulk upload template (.xlsx)">Import EC2 template</button>
-    <input bind:this={picker} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onchange={pickFile} />
+    <button onclick={() => (awsOpen = true)} disabled={!!working} title="Import or fill the AWS Pricing Calculator EC2 bulk upload template">AWS files</button>
     <button onclick={() => run('Building the spreadsheet…', () => download(report(), 'xlsx'))} disabled={!!working}>Excel</button>
     <button onclick={() => run('Building the PDF…', () => download(report(), 'pdf'))} disabled={!!working}>PDF</button>
     <button class="primary" onclick={share} disabled={!!working}>Share link</button>
   </div>
 </header>
+<AwsFiles bind:open={awsOpen} onimport={importFile} onfill={fillTemplate} />
 {#if working || problem || shareUrl || imported}
   <div class="flash" role="status">
     {#if working}{working}{/if}
@@ -89,7 +105,7 @@
     {#if imported && !working}
       <span>{imported.text}</span>
       {#if imported.skipped.length}
-        <details><summary>{imported.skipped.length} row{imported.skipped.length === 1 ? '' : 's'} skipped</summary><ul class="small">{#each imported.skipped as s}<li>{s}</li>{/each}</ul></details>
+        <details><summary>{imported.skipped.length} {imported.skipped.length === 1 ? 'note' : 'notes'}: left out or changed</summary><ul class="small">{#each imported.skipped as s}<li>{s}</li>{/each}</ul></details>
       {/if}
       <button class="ghost small" onclick={() => (imported = null)} aria-label="Dismiss">✕</button>
     {/if}

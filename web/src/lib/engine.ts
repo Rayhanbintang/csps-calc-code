@@ -5,7 +5,7 @@ import type { Ctx, ModelOption } from './catalog';
 import type { Manifest } from './prices';
 import { unavailable } from './catalog/util';
 import { syncVmSize } from './catalog/vm';
-import { walk } from './tree';
+import { pricedItem, walk } from './tree';
 import { supportFee } from './support';
 import type { SupportFee } from './support';
 
@@ -191,8 +191,7 @@ export async function priceEstimate(est: Estimate, manifest: Manifest): Promise<
     for (const box of acc.regions) {
       const ctx = ctxFor(manifest, acc.provider, box.region);
       for (const n of walk(box.items)) {
-        const { children: _c, ...flat } = n.item;
-        jobs.push(priceItem(ctx, { ...flat, qty: n.item.qty * n.mult }).then((p) => void out.set(n.item.id, p)));
+        jobs.push(priceItem(ctx, pricedItem(n)).then((p) => void out.set(n.item.id, p)));
       }
     }
   await Promise.all(jobs);

@@ -2,7 +2,7 @@
 import type { Item, Line, Priced } from '../types';
 import { aws, gcp, oci } from '../prices';
 import {
-  H, awsCost, awsFind, awsRate, gcpCost, gcpFind, gcpRate, line, must, num, ociCost, ociPart, ociRate, opts, priced, str, tierLine,
+  H, awsCost, awsFind, awsRate, gcpCost, gcpFind, gcpRate, line, must, num, ociCost, ociPart, ociRate, opts, priced, str, tierLine, unavailable,
 } from './util';
 import type { Ctx, Service } from './util';
 
@@ -14,15 +14,23 @@ export const k8s: Service = {
   id: 'k8s',
   label: 'Kubernetes cluster',
   group: 'Compute',
-  blurb: 'EKS · GKE · OKE (control plane; add worker VMs separately)',
-  defaults: { support: 'standard' },
+  blurb: 'EKS · GKE · OKE · AKS · OpenShift (control plane; add worker VMs inside)',
+  defaults: { support: 'standard', flavor: 'native' },
   fields: [
-    { key: 'support', label: 'Version support', type: 'select', options: opts(['standard', 'Standard support'], ['extended', 'Extended support']) },
+    {
+      key: 'flavor', label: 'Kubernetes', type: 'select', options: opts(['native', "The cloud's own (EKS, GKE, OKE, AKS)"], ['openshift', 'Red Hat OpenShift (ROSA, ARO)']),
+      help: 'OpenShift bills per worker vCPU: put the worker VMs inside this card.',
+    },
+    {
+      key: 'support', label: 'Version support', type: 'select', options: opts(['standard', 'Standard support'], ['extended', 'Extended support']),
+      show: (s) => s.flavor !== 'openshift',
+    },
   ],
   providers: {
     aws: {
-      product: 'Amazon EKS',
+      product: 'Amazon EKS / ROSA',
       price: async (ctx, item) => {
+        if (str(item.spec, 'flavor') === 'openshift') return rosaPrice(item);
         const rows = await aws.rows(ctx.region, 'eks');
         const ext = str(item.spec, 'support') === 'extended';
         const rate = must(awsRate(awsFind(rows, ext ? 'AmazonEKS-Hours:extendedSupport' : 'AmazonEKS-Hours:perCluster')), 'EKS cluster');
@@ -33,7 +41,9 @@ export const k8s: Service = {
     },
     gcp: {
       product: 'Google Kubernetes Engine',
+      off: { flavor: { openshift: 'Google Cloud sells no managed OpenShift. Red Hat sells OpenShift Dedicated on Google Cloud itself.' } },
       price: async (ctx, item) => {
+        if (str(item.spec, 'flavor') === 'openshift') return unavailable(NO_OPENSHIFT.gcp);
         const g = [...(await gcp.region(ctx.region)), ...(await gcp.global())];
         const ext = str(item.spec, 'support') === 'extended';
         const r = gcpFind(g, ext ? /^Extended Period Kubernetes Clusters$/ : /^Regional Kubernetes Clusters$/, 'OnDemand', 'gke');
@@ -44,7 +54,9 @@ export const k8s: Service = {
     },
     oci: {
       product: 'OCI Kubernetes Engine',
+      off: { flavor: { openshift: 'OCI sells no managed OpenShift. OpenShift runs self-managed on OCI VMs.' } },
       price: async (_ctx, item) => {
+        if (str(item.spec, 'flavor') === 'openshift') return unavailable(NO_OPENSHIFT.oci);
         const rows = await oci.all();
         return priced([line('OKE Enhanced cluster', H * item.qty, 'cluster-hours', must(ociRate(ociPart(rows, 'B96545')), 'OKE cluster'))], {
           sku: 'OKE Enhanced', notes: ['OKE Basic clusters are free but lack add-ons and virtual nodes.'],
@@ -53,6 +65,27 @@ export const k8s: Service = {
     },
   },
 };
+
+const NO_OPENSHIFT = {
+  gcp: 'Google Cloud sells no managed OpenShift.',
+  oci: 'OCI sells no managed OpenShift.',
+};
+
+/** ROSA is billed through AWS Marketplace, so AWS's price list has no ROSA rows. Rates
+ *  from aws.amazon.com/rosa/pricing/, read 2026-10-12: hosted control planes, on demand. */
+export const ROSA = { clusterHour: 0.25, per4vcpuHour: 0.171, src: 'https://aws.amazon.com/rosa/pricing/' };
+
+/** Red Hat OpenShift Service on AWS with hosted control planes: a cluster fee plus a fee
+ *  per worker vCPU. The worker VMs inside the card are priced as EC2 instances. */
+function rosaPrice(item: Item): Priced {
+  const vcpu = num(item.spec, 'workers.vcpu', 0);
+  const notes = ['ROSA rates come from the ROSA pricing page, not the daily price list. Worker VMs are priced as EC2 instances.'];
+  if (!vcpu) notes.push('No worker VMs inside this card yet. ROSA charges per worker vCPU.');
+  return priced([
+    line('ROSA cluster fee', H * item.qty, 'cluster-hours', ROSA.clusterHour),
+    line('ROSA worker fee', vcpu * H * item.qty, 'vCPU-hours', ROSA.per4vcpuHour / 4),
+  ], { sku: 'ROSA, hosted control planes', notes });
+}
 
 // =====================================================================================
 // Functions

@@ -1,17 +1,19 @@
 // App state: the estimate being edited, the selection and the prices of each item.
 import { SvelteMap } from 'svelte/reactivity';
 import type { Account, Estimate, Item, Priced, Provider, RegionBox } from './types';
-import { loadManifest } from './prices';
+import { HOURS_PER_MONTH } from './types';
+import { aws, loadManifest } from './prices';
 import type { Manifest } from './prices';
 import { ctxFor, estimateTotals, moveItem, newItem, priceItem, uid } from './engine';
 import type { Totals } from './engine';
 import { supportFee } from './support';
-import { ADDONS, attachSpec, canHold, contains, findNode, walk } from './tree';
+import { ADDONS, attachSpec, canHold, contains, findNode, pricedItem, walk } from './tree';
 import type { Node } from './tree';
 import { readSheet } from './xlsxread';
 import { SHEET, parseTemplate } from './awsimport';
 import type { ImportResult } from './awsimport';
 import { syncVmSize } from './catalog/vm';
+import { awsFind, awsRate } from './catalog/util';
 import { boxWidth, freeBoxSpot, freeSpot } from './board.svelte';
 import { cloneAccount, cloneBox, cloneItem, copyLabel } from './copy';
 
@@ -160,8 +162,7 @@ function keyOf(provider: Provider, region: string, item: Item): string {
 
 /** A copy of the item as it is priced: its count times every container above it. */
 function asPriced(n: Node): Item {
-  const { children: _c, ...rest } = $state.snapshot(n.item) as Item;
-  return { ...rest, qty: n.item.qty * n.mult };
+  return pricedItem({ ...n, item: $state.snapshot(n.item) as Item });
 }
 
 /** The price key each item wants now. A reply for an older key (the item changed cloud,
@@ -224,8 +225,7 @@ export async function repriceTabs(): Promise<void> {
     for (const acc of est.accounts)
       for (const box of acc.regions)
         for (const node of walk(box.items)) {
-          const { children: _c, ...flat } = node.item;
-          const item = { ...flat, qty: node.item.qty * node.mult };
+          const item = pricedItem(node);
           const key = keyOf(acc.provider, box.region, item);
           const hit = memo.get(key);
           if (hit) {
@@ -554,6 +554,22 @@ export async function importAwsTemplate(file: ArrayBuffer): Promise<ImportResult
       box = acc.regions[acc.regions.length - 1];
     }
     box.items.push(...b.items);
+  }
+  // Dedicated Instances: AWS adds one fee per region while any of them runs. It goes on a
+  // card of its own, once per region, in the first box that holds a dedicated row.
+  for (const region of new Set(res.boxes.filter((b) => b.dedicated).map((b) => b.region))) {
+    const box = acc.regions.find((r) => r.region === region && r.items.some((i) => i.spec.tenancy === 'dedicated'));
+    if (!box || box.items.some((i) => i.svc === 'custom' && i.spec.fee === 'dedicated')) continue;
+    const fee = awsRate(awsFind(await aws.rows(region, 'ec2x'), 'DedicatedUsage'));
+    if (!Number.isFinite(fee)) {
+      res.skipped.push(`${region}: the Dedicated Instance fee per region is not in the price list yet; add it by hand.`);
+      continue;
+    }
+    const card = newItem('custom');
+    card.name = 'EC2 Dedicated fee per region';
+    card.spec = { ...card.spec, what: 'Dedicated Instance fee per region', unit: 'regions', monthly: Math.round(fee * HOURS_PER_MONTH * 100) / 100, upfront: 0, fee: 'dedicated' };
+    card.check = `AWS charges $${fee.toFixed(2)} an hour, once per region and account, while any Dedicated Instance runs. Rate as of the import.`;
+    box.items.push(card);
   }
   // A blank starter box would only clutter the site after an import.
   acc.regions = acc.regions.filter((r) => !(emptyBefore.has(r.id) && !r.items.length));

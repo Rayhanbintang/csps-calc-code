@@ -1,10 +1,12 @@
 // Imports the AWS Pricing Calculator "EC2 Instances" bulk upload template
 // (Amazon_EC2_Instances_BulkUpload_Template_Commercial.xlsx, sheet "Inputs"). Each row
-// becomes a VM card with the instance count, and a block disk inside it when the row
-// has EBS storage. Rows land in region boxes per AWS region and group.
+// becomes a VM card with the instance count, a block disk inside it when the row has EBS
+// storage, and a backup card for its EBS snapshots. Rows land in region boxes per AWS
+// region and group.
 import type { Item, Pricing, Spec } from './types';
 import { HOURS_PER_MONTH } from './types';
 import { newItem } from './engine';
+import { attachSpec } from './tree';
 
 export const SHEET = 'Inputs';
 
@@ -13,6 +15,8 @@ export interface ImportBox {
   region: string;
   group: string;
   items: Item[];
+  /** A row in this box runs on dedicated tenancy. */
+  dedicated?: boolean;
 }
 
 export interface ImportResult {
@@ -48,12 +52,15 @@ function os(name: string): { os: string; sw: string; note?: string } | undefined
   const n = name.trim();
   const sw = /SQL Server Enterprise/i.test(n) ? 'sql-ent' : /SQL Server Standard/i.test(n) ? 'sql-std' : /SQL Server Web/i.test(n) ? 'sql-web' : 'none';
   if (/^Windows Server/i.test(n)) return { os: 'windows', sw };
-  if (/^Red Hat Enterprise Linux/i.test(n)) return { os: 'rhel', sw, note: /with HA/i.test(n) ? 'Priced as RHEL without the High Availability add-on.' : undefined };
+  if (/^Red Hat Enterprise Linux/i.test(n)) return { os: /with HA/i.test(n) ? 'rhel-ha' : 'rhel', sw };
   if (/^SUSE/i.test(n)) return { os: 'suse', sw };
   if (/^Ubuntu Pro/i.test(n)) return { os: 'ubuntu-pro', sw };
   if (/^Linux/i.test(n)) return { os: 'linux', sw };
   return undefined;
 }
+
+/** Snapshots a month for each frequency the template offers. */
+const SNAPS: Record<string, number> = { hourly: 730, '2x daily': 60, daily: 30, weekly: 4, monthly: 1 };
 
 /** "3 Yr All Upfront Compute Savings Plan" and the other purchasing options → our pricing. */
 export function purchase(label: string): { pricing: Pricing; note?: string } | undefined {
@@ -121,7 +128,11 @@ export function parseTemplate(rows: string[][], regions: string[]): ImportResult
     const notes: string[] = [];
     if (o.note) notes.push(o.note);
     if (p.note) notes.push(p.note);
-    if (/dedicated/i.test(get('tenancy'))) notes.push('Dedicated tenancy in the template; priced as shared.');
+    const dedicated = /dedicated/i.test(get('tenancy'));
+    if (dedicated && p.pricing.model !== 'od') {
+      notes.push(`Dedicated with "${get('purchase')}" in the template; this calculator prices Dedicated Instances on demand only.`);
+      p.pricing = { model: 'od' };
+    }
     let hours = HOURS_PER_MONTH;
     if (/hours\s*\/\s*week/i.test(get('usageType'))) {
       const perWeek = Math.min(168, Math.max(0, number(get('usage')) ?? 168));
@@ -131,7 +142,7 @@ export function parseTemplate(rows: string[][], regions: string[]): ImportResult
     const vm = newItem('vm');
     vm.qty = qty;
     vm.name = get('description') || type;
-    vm.spec = { ...vm.spec, 'aws.type': type, os: o.os, sw: o.sw, licence: 'included', hours } as Spec;
+    vm.spec = { ...vm.spec, 'aws.type': type, os: o.os, sw: o.sw, licence: 'included', hours, tenancy: dedicated ? 'dedicated' : 'shared' } as Spec;
     vm.pricing = p.pricing;
 
     const storage = get('storage');
@@ -152,13 +163,27 @@ export function parseTemplate(rows: string[][], regions: string[]): ImportResult
       }
     }
     const snap = get('snapFreq');
-    if (snap && !/^no snapshot/i.test(snap)) notes.push(`EBS snapshots (${snap.toLowerCase()}, ${get('snapGb') || '?'} GB each) are not priced; add them by hand.`);
+    const perMonth = SNAPS[snap.toLowerCase()];
+    if (snap && !/^no snapshot/i.test(snap)) {
+      const each = number(get('snapGb'));
+      if (!perMonth || each === undefined) notes.push(`EBS snapshots ("${snap}", ${get('snapGb') || '?'} GB) could not be read; add them by hand.`);
+      else {
+        // One month kept: the first snapshot copies the volume, each later one only its changes.
+        const full = gb ?? each;
+        const backup = newItem('backup');
+        backup.name = 'EBS snapshots';
+        backup.spec = { ...backup.spec, ...attachSpec('backup', vm), gb: Math.round(full + each * (perMonth - 1)) };
+        backup.check = `From the template: ${snap.toLowerCase()} snapshots of ${each} GB, kept one month (a ${full} GB first copy plus ${perMonth - 1} × ${each} GB). Change the size for another retention.`;
+        vm.children = [...(vm.children ?? []), backup];
+      }
+    }
     if (notes.length) vm.check = notes.join(' ');
 
     const group = get('group');
     const key = `${region}\u0000${group}`;
     if (!boxes.has(key)) boxes.set(key, { region, group, items: [] });
     boxes.get(key)!.items.push(vm);
+    if (dedicated) boxes.get(key)!.dedicated = true;
     count++;
     instances += qty;
   }

@@ -12,13 +12,16 @@ import type { Item, Pricing, Provider } from './types';
 import { carryPricing, ctxFor, moveItem, newItem, priceItem } from './engine';
 import { loadManifest } from './prices';
 import type { Manifest } from './prices';
-import { attachSpec } from './tree';
+import { attachSpec, pricedItem } from './tree';
 import { continent } from './catalog/util';
 import { erZone, osLicence } from './catalog/azure';
 import { service } from './catalog';
 
 const dir = process.env.PRICES_DIR ?? fileURLToPath(new URL('../../public/prices', import.meta.url));
 const have = existsSync(join(dir, 'manifest.json'));
+const ec2Jakarta = have ? (gz('aws/ap-southeast-3/ec2.json') as { t: string; dd?: number }[] | null) : null;
+const hasDedicated = !!ec2Jakarta?.some((r) => r.dd);
+const hasAro = !!(have ? gz('azure/global.json') : null)?.some((r) => (r as { p?: string }).p === 'Azure Red Hat OpenShift General Purpose');
 
 function gz<T = { s?: string; p?: string; m?: string; k?: string }>(path: string): T[] | null {
   const f = join(dir, `${path}.gz`);
@@ -219,5 +222,60 @@ describe.skipIf(!have)('options a cloud does not sell', () => {
     const p = await price('azure', 'indonesiacentral', item('containers', { arch: 'arm' }));
     expect(p.unavailable).toMatch(/x86 only/);
     expect((await price('azure', 'indonesiacentral', item('containers', { arch: 'x86' }))).unavailable).toBeUndefined();
+  });
+});
+
+// Backlog B3.4 and K6.
+describe.skipIf(!have)('OpenShift and Azure database backups', () => {
+  const cluster = (provider: Provider, workers: { vcpu: number; qty: number }[]) => {
+    const k = item('k8s', { flavor: 'openshift' });
+    k.children = workers.map((w) => ({ ...item('vm', { vcpu: w.vcpu, mem: w.vcpu * 4 }), qty: w.qty }));
+    return pricedItem({ item: k, mult: 1, depth: 0, parent: null, list: [k] });
+  };
+  it('ROSA: $0.25 a cluster-hour plus $0.171 per 4 worker vCPU-hours: 3 × 4 vCPU = 730 × (0.25 + 12 × 0.04275) = $556.97', async () => {
+    const p = await price('aws', 'ap-southeast-3', cluster('aws', [{ vcpu: 4, qty: 3 }]));
+    near(p.monthly, 730 * (0.25 + 12 * 0.04275));
+  });
+  it('OpenShift is greyed out and refused on Google Cloud and OCI', async () => {
+    expect((await price('gcp', 'asia-southeast2', cluster('gcp', []))).unavailable).toMatch(/no managed OpenShift/);
+    expect((await price('oci', 'ap-singapore-1', cluster('oci', []))).unavailable).toMatch(/no managed OpenShift/);
+  });
+  it.skipIf(!hasAro)('ARO: 3 control-plane D8s v5 at the Linux rate plus the worker licence', async () => {
+    const p = await price('azure', 'indonesiacentral', cluster('azure', [{ vcpu: 4, qty: 3 }]));
+    expect(p.lines.map((l) => l.label)).toEqual(['Control plane, 3 × D8s v5', 'OpenShift worker licence']);
+    near(p.lines[1].monthly, 12 * 730 * 0.04275);
+  });
+  it('an Azure PostgreSQL backup bills at the Flexible Server backup meter: 100 GB × $0.095 = $9.50', async () => {
+    const db = item('db', { engine: 'postgres' });
+    const b = item('backup', { on: 'db', what: 'db', gb: 100 });
+    const p = await price('azure', 'indonesiacentral', pricedItem({ item: b, mult: 1, depth: 1, parent: db, list: [b] }));
+    near(p.monthly, 9.5);
+    expect(p.sku).toMatch(/PostgreSQL/);
+  });
+});
+
+// Backlog E1: template settings the calculator now prices.
+describe.skipIf(!have)('EC2 template extras', () => {
+  it('RHEL with HA has its own AWS price, above plain RHEL', async () => {
+    const ha = await price('aws', 'ap-southeast-3', item('vm', { 'aws.type': 'm5.large', os: 'rhel-ha' }));
+    const rhel = await price('aws', 'ap-southeast-3', item('vm', { 'aws.type': 'm5.large', os: 'rhel' }));
+    expect(ha.unavailable).toBeUndefined();
+    expect(ha.monthly).toBeGreaterThan(rhel.monthly);
+  });
+  it('RHEL with HA and dedicated tenancy are refused on the other clouds', async () => {
+    expect((await price('gcp', 'asia-southeast2', item('vm', { os: 'rhel-ha' }))).unavailable).toMatch(/RHEL with HA/);
+    expect((await price('azure', 'indonesiacentral', item('vm', { tenancy: 'dedicated' }))).unavailable).toMatch(/dedicated tenancy on AWS only/);
+  });
+});
+
+describe.skipIf(!hasDedicated)('Dedicated Instances', () => {
+  it('m5.large Linux dedicated in Jakarta: 730 h × $0.127 = $92.71, with the region fee named in a note', async () => {
+    const p = await price('aws', 'ap-southeast-3', item('vm', { 'aws.type': 'm5.large', tenancy: 'dedicated' }));
+    near(p.monthly, 730 * 0.127);
+    expect(p.notes.join(' ')).toMatch(/\$2\.00 an hour per region/);
+  });
+  it('a Reserved Instance on dedicated tenancy is refused, not priced as shared', async () => {
+    const p = await price('aws', 'ap-southeast-3', { ...item('vm', { 'aws.type': 'm5.large', tenancy: 'dedicated' }), pricing: { model: 'ri', term: 1, pay: 'no', cls: 's' } });
+    expect(p.unavailable).toMatch(/on demand only/);
   });
 });

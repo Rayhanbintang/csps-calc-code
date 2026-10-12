@@ -26,17 +26,22 @@ describe('AWS EC2 bulk upload template', () => {
     expect(web.children?.[0].spec).toMatchObject({ gb: 100, type: 'ssd', 'aws.volume': 'gp3', iops: 5000, mbps: 250 });
     expect(web.check).toBeUndefined();
 
-    expect(db.spec).toMatchObject({ os: 'windows', sw: 'sql-std' });
-    expect(db.pricing).toEqual({ model: 'ri', term: 1, pay: 'no', cls: 's' });
+    expect(db.spec).toMatchObject({ os: 'windows', sw: 'sql-std', tenancy: 'dedicated' });
+    // Dedicated Instances are priced on demand only; the 1-year RI in the template is flagged.
+    expect(db.pricing).toEqual({ model: 'od' });
+    expect(db.check).toMatch(/on demand only/);
+    expect(res.boxes[0].dedicated).toBe(true);
     expect(db.children?.[0].spec).toMatchObject({ type: 'ssd-fast', 'aws.volume': 'io2', gb: 500 });
-    expect(db.check).toMatch(/Dedicated tenancy/);
-    expect(db.check).toMatch(/snapshots \(daily, 50 GB each\)/);
+    // Daily snapshots of 50 GB kept a month: a 500 GB first copy plus 29 × 50 GB = 1,950 GB.
+    const snaps = db.children?.[1];
+    expect(snaps?.svc).toBe('backup');
+    expect(snaps?.spec).toMatchObject({ on: 'vm', what: 'vm', gb: 1950 });
 
     const batch = res.boxes[1].items[0];
     expect(batch.spec.hours).toBe(365); // 84 of 168 hours a week
-    expect(batch.spec.os).toBe('rhel');
+    expect(batch.spec.os).toBe('rhel-ha');
     expect(batch.pricing).toEqual({ model: 'od' });
-    expect(batch.check).toMatch(/High Availability/);
+    expect(batch.check).not.toMatch(/High Availability/);
     expect(batch.check).toMatch(/Spot/);
     expect(batch.children).toBeUndefined();
   });
@@ -62,5 +67,19 @@ describe('AWS EC2 bulk upload template', () => {
     expect(res.rows).toBe(2);
     expect(res.boxes[0].items[0].spec['aws.type']).toBe('t4g.nano');
     expect(res.boxes[1].items[0].spec.hours).toBe(Math.round((167 * 730) / 168));
+  });
+});
+
+describe('our sample file (public/templates/csps-ec2-sample.xlsx)', () => {
+  it('imports every row with nothing skipped or flagged', async () => {
+    const file = readFileSync(new URL('../../public/templates/csps-ec2-sample.xlsx', import.meta.url));
+    const res = parseTemplate(await readSheet(file, SHEET), REGIONS);
+    expect(res.skipped).toEqual([]);
+    expect(res.rows).toBe(3);
+    expect(res.instances).toBe(7);
+    const all = res.boxes.flatMap((b) => b.items);
+    expect(all.filter((i) => i.check)).toEqual([]);
+    // Daily 5 GB snapshots of a 100 GB disk, one month kept: 100 + 29 × 5 = 245 GB.
+    expect(all[0].children?.[1].spec.gb).toBe(245);
   });
 });

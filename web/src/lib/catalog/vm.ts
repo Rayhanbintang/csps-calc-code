@@ -3,7 +3,7 @@ import type { Item, Line, Priced, Provider, Spec } from '../types';
 import { aws, gcp, oci } from '../prices';
 import type { AwsInstance, GcpRow, OciRow } from '../prices';
 import {
-  H, line, must, num, ociPart, ociRate, ociCost, opts, priced, str, tierLine, unavailable, gcpFind, gcpRate, escapeRe,
+  H, awsFind, awsRate, line, must, num, ociPart, ociRate, ociCost, opts, priced, str, tierLine, unavailable, gcpFind, gcpRate, escapeRe,
 } from './util';
 import { zonesField } from '../zones';
 import type { Ctx, Field, Service } from './util';
@@ -13,12 +13,26 @@ const osOptions = opts(
   ['linux', 'Linux'],
   ['windows', 'Windows Server'],
   ['rhel', 'Red Hat Enterprise Linux'],
+  ['rhel-ha', 'Red Hat Enterprise Linux with HA'],
   ['suse', 'SUSE Linux Enterprise'],
   ['ubuntu-pro', 'Ubuntu Pro'],
 );
 const swOptions = opts(['none', 'None'], ['sql-web', 'SQL Server Web'], ['sql-std', 'SQL Server Standard'], ['sql-ent', 'SQL Server Enterprise']);
 
-const awsOS: Record<string, string> = { linux: 'Linux', windows: 'Windows', rhel: 'RHEL', suse: 'SUSE', 'ubuntu-pro': 'Ubuntu Pro' };
+const awsOS: Record<string, string> = { linux: 'Linux', windows: 'Windows', rhel: 'RHEL', 'rhel-ha': 'Red Hat Enterprise Linux with HA', suse: 'SUSE', 'ubuntu-pro': 'Ubuntu Pro' };
+
+/** VM options this calculator prices on AWS only. Other clouds grey them out and refuse
+ *  them, so a cloud switch stops instead of pricing something else. */
+export function awsOnlyOff(cloud: string): Record<string, Record<string, string>> {
+  return {
+    os: { 'rhel-ha': `This calculator has no price for RHEL with HA on ${cloud}.` },
+    tenancy: { dedicated: `This calculator prices dedicated tenancy on AWS only, not on ${cloud}.` },
+  };
+}
+export function awsOnly(spec: Spec, cloud: string): string | undefined {
+  const off = awsOnlyOff(cloud);
+  return off.os[str(spec, 'os')] ?? off.tenancy[str(spec, 'tenancy')];
+}
 const awsSW: Record<string, string> = { none: '', 'sql-web': 'SQL Web', 'sql-std': 'SQL Std', 'sql-ent': 'SQL Ent' };
 
 function hours(spec: Spec): number {
@@ -115,12 +129,26 @@ async function awsVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const os = awsOS[str(item.spec, 'os', 'linux')];
   const sw = awsSW[str(item.spec, 'sw', 'none')];
   const label = `${inst.t} (${os}${sw ? ' + ' + sw : ''})`;
+  if (str(item.spec, 'tenancy') === 'dedicated') return awsDedicated(ctx, item, inst, label);
   const c = awsCommitted(item, label, inst.od, hours(item.spec), inst.ri, inst.sp);
   const notes: string[] = [];
   if (c.note) notes.push(c.note);
   if (byol(item.spec) && os === 'Windows' && !sw) notes.push('Windows licence not included (bring your own licence).');
   if (byol(item.spec) && (os !== 'Windows' || sw)) notes.push('AWS sells this OS or SQL Server only with the licence included; the price includes it.');
   return priced(c.lines, { upfront: c.upfront, sku: `${inst.t} · ${inst.c} vCPU · ${inst.m} GiB`, notes });
+}
+
+/** Dedicated Instances: the instance's dedicated on-demand rate. AWS adds a fee per region
+ *  while any Dedicated Instance runs; it belongs to the region, so it is not on the card. */
+async function awsDedicated(ctx: Ctx, item: Item, inst: AwsInstance, label: string): Promise<Priced> {
+  const where = ctx.info?.name ?? ctx.region;
+  if (!inst.dd) return unavailable(`${inst.t} has no Dedicated Instance price in ${where}.`);
+  if ((item.pricing?.model ?? 'od') !== 'od') return unavailable('This calculator prices Dedicated Instances on demand only.');
+  const fee = awsRate(awsFind(await aws.rows(ctx.region, 'ec2x'), 'DedicatedUsage'));
+  const notes = [Number.isFinite(fee)
+    ? `AWS also charges $${fee.toFixed(2)} an hour per region while any Dedicated Instance runs there. Add it once per region as a custom line; the EC2 template import adds it.`
+    : 'AWS also charges a fee per region while any Dedicated Instance runs there. Add it once per region as a custom line.'];
+  return priced([line(`${label}, dedicated`, item.qty * hours(item.spec), 'instance-hours', inst.dd)], { sku: `${inst.t} · dedicated · ${inst.c} vCPU · ${inst.m} GiB`, notes });
 }
 
 // =====================================================================================
@@ -252,6 +280,8 @@ async function gcpVmFields(): Promise<Field[]> {
 }
 
 async function gcpVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
+  const no = awsOnly(item.spec, 'Google Cloud');
+  if (no) return unavailable(no);
   const rows = await gcp.region(ctx.region);
   const chosen = str(item.spec, 'gcp.type');
   const t = chosen
@@ -322,6 +352,8 @@ async function ociVmFields(): Promise<Field[]> {
 }
 
 async function ociVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
+  const no = awsOnly(item.spec, 'OCI');
+  if (no) return unavailable(no);
   const rows: OciRow[] = await oci.all();
   const arch = str(item.spec, 'arch', 'x86');
   const shape = ociShapes[str(item.spec, 'oci.shape')] ?? ociShapes[arch === 'arm' ? 'VM.Standard.A1.Flex' : 'VM.Standard.E5.Flex'];
@@ -396,6 +428,7 @@ export const vm: Service = {
     { key: 'os', label: 'Operating system', type: 'select', options: osOptions },
     { key: 'sw', label: 'Database licence', type: 'select', options: swOptions },
     { key: 'licence', label: 'Licence', type: 'select', options: opts(['included', 'Included in price'], ['byol', 'Bring your own']) },
+    { key: 'tenancy', label: 'Tenancy', type: 'select', options: opts(['shared', 'Shared hardware'], ['dedicated', 'Dedicated Instance (AWS)']) },
     { key: 'hours', label: 'Running hours', type: 'number', unit: 'h / month', min: 0, step: 1, help: '730 = always on' },
     zonesField,
   ],
@@ -414,6 +447,7 @@ export const vm: Service = {
     gcp: {
       product: 'Compute Engine',
       fields: gcpVmFields,
+      off: awsOnlyOff('Google Cloud'),
       models: [{ model: 'od', label: 'On-demand' }, { model: 'cud', label: 'Committed use', terms: [1, 3] }],
       price: gcpVmPrice,
       adopt: adoptVm,
@@ -421,6 +455,7 @@ export const vm: Service = {
     oci: {
       product: 'OCI Compute',
       fields: ociVmFields,
+      off: awsOnlyOff('OCI'),
       models: [{ model: 'od', label: 'Pay as you go' }],
       price: ociVmPrice,
       adopt: adoptVm,

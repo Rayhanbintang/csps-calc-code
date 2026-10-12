@@ -5,7 +5,7 @@ import type { Account, Item, Provider } from './types';
 import type { Manifest } from './prices';
 import { service } from './catalog';
 import { ctxFor, moveItem, priceItem, providerNames } from './engine';
-import { walk } from './tree';
+import { pricedItem, walk } from './tree';
 
 /** Approximate location [latitude, longitude] of each region's data centres. */
 const AT: Record<string, [number, number]> = {
@@ -137,8 +137,7 @@ export async function swapAccount(acc: Account, to: Provider, manifest: Manifest
       await Promise.all(
         [...walk(items)].map(async (n) => {
           if (!pricedBefore.has(n.item.id)) return;
-          const { children: _c, ...flat } = n.item;
-          const p = await priceItem(ctx, { ...flat, qty: n.item.qty * n.mult });
+          const p = await priceItem(ctx, pricedItem(n));
           if (p.unavailable) blockers.push({ name: n.item.name || service(n.item.svc)?.label || n.item.svc, reason: p.unavailable });
         }),
       );

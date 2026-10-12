@@ -1,6 +1,7 @@
 // Calls to the Go functions under /api.
 import type { Estimate } from './types';
 import type { Report } from './report';
+import type { AwsRow } from './awsexport';
 
 export interface Saved {
   slug: string;
@@ -44,11 +45,24 @@ export async function download(report: Report, format: 'xlsx' | 'pdf'): Promise<
     body: JSON.stringify(report),
   });
   if (!res.ok) await fail(res);
-  const blob = await res.blob();
+  const safe = (report.name || 'estimate').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'estimate';
+  save(await res.blob(), `${safe}.${format}`);
+}
+
+/** Sends the visitor's copy of AWS's EC2 template with the rows; downloads the filled file. */
+export async function fillAwsTemplate(template: File, rows: AwsRow[]): Promise<void> {
+  const form = new FormData();
+  form.append('template', template);
+  form.append('rows', JSON.stringify(rows));
+  const res = await fetch('/api/export?format=awsec2', { method: 'POST', body: form });
+  if (!res.ok) await fail(res);
+  save(await res.blob(), template.name.replace(/\.xlsx$/i, '') + '-filled.xlsx');
+}
+
+function save(blob: Blob, name: string): void {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  const safe = (report.name || 'estimate').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'estimate';
-  a.download = `${safe}.${format}`;
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();

@@ -18,6 +18,7 @@ type Instance struct {
 	SW     string     `json:"sw,omitempty"`  // pre-installed software, e.g. "SQL Std"; empty = none
 	BYOL   bool       `json:"byol,omitempty"`
 	OnDem  float64    `json:"od"`            // USD per hour
+	Ded    float64    `json:"dd,omitempty"`  // USD per hour on dedicated tenancy (on demand)
 	RI     []Reserved `json:"ri,omitempty"`  // Reserved Instance options
 	SP     []SPRate   `json:"sp,omitempty"`  // Savings Plans options
 	usage  string
@@ -63,6 +64,10 @@ func ParseEC2(r io.Reader) (*EC2Result, error) {
 		if family == "Compute Instance" {
 			return wantedInstance(a)
 		}
+		if family == "Fee" {
+			// "$2.00 once per hour when using dedicated tenancy ... in the Region"
+			return strings.HasSuffix(a["usagetype"], "DedicatedUsage")
+		}
 		return ec2Families[family]
 	})
 	if err != nil {
@@ -70,6 +75,8 @@ func ParseEC2(r io.Reader) (*EC2Result, error) {
 	}
 	res := &EC2Result{}
 	var others []*item
+	// Dedicated Instances: only the on-demand rate, attached to the matching shared row.
+	ded := map[string]float64{}
 	for _, it := range items {
 		if !it.hasOnDem {
 			continue
@@ -82,6 +89,10 @@ func ParseEC2(r io.Reader) (*EC2Result, error) {
 		if !ok {
 			continue
 		}
+		if it.Attr["tenancy"] == "Dedicated" {
+			ded[inst.key()] = inst.OnDem
+			continue
+		}
 		if res.Location == "" {
 			res.Location = it.Attr["location"]
 		}
@@ -89,6 +100,9 @@ func ParseEC2(r io.Reader) (*EC2Result, error) {
 			res.Prefix = prefixOf(inst.usage)
 		}
 		res.Instances = append(res.Instances, inst)
+	}
+	for i := range res.Instances {
+		res.Instances[i].Ded = ded[res.Instances[i].key()]
 	}
 	for _, it := range others {
 		res.Rows = append(res.Rows, toRow(it, res.Prefix, []string{"volumeApiName"}))
@@ -107,8 +121,13 @@ func prefixOf(usage string) string {
 	return "USE1"
 }
 
+// key names one instance configuration across tenancies.
+func (i Instance) key() string {
+	return i.Type + "|" + i.OS + "|" + i.SW + "|" + strconv.FormatBool(i.BYOL)
+}
+
 func wantedInstance(a map[string]string) bool {
-	if a["tenancy"] != "Shared" || a["capacitystatus"] != "Used" {
+	if (a["tenancy"] != "Shared" && a["tenancy"] != "Dedicated") || a["capacitystatus"] != "Used" {
 		return false
 	}
 	if mo := a["marketoption"]; mo != "" && mo != "OnDemand" {

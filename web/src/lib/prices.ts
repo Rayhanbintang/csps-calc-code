@@ -21,6 +21,8 @@ export interface AwsSP { k: 'c' | 'e'; y: number; p: 'no' | 'partial' | 'all'; h
 export interface AwsInstance {
   t: string; c: number; m: number; ar?: string; os: string; sw?: string; byol?: boolean;
   od: number; ri?: AwsReserved[]; sp?: AwsSP[];
+  /** On-demand rate on dedicated tenancy, when AWS sells it. */
+  dd?: number;
 }
 export interface AwsUsageSP { k: string; sp: AwsSP[] }
 export interface AwsRow {

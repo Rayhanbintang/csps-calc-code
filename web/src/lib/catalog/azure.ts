@@ -11,6 +11,7 @@ import { ctUsage, fnUsage } from './compute';
 import { customPrice, POINTS } from './more';
 import { destField, vpcPrice } from './network';
 import { azureInstanceFee, geoOf } from './addons';
+import { awsOnly, awsOnlyOff } from './vm';
 
 const reg = (ctx: Ctx) => azure.region(ctx.region);
 const svc = (rows: AzRow[], service: string) => rows.filter((r) => r.s === service);
@@ -121,6 +122,8 @@ export function osLicence(rows: AzRow[], vcpu: number): number | undefined {
 }
 
 async function azVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
+  const no = awsOnly(item.spec, 'Azure');
+  if (no) return unavailable(no);
   const list = sizes(await reg(ctx));
   const arm = str(item.spec, 'arch', 'x86') === 'arm';
   const chosen = str(item.spec, 'azure.size');
@@ -253,7 +256,25 @@ async function azFilePrice(ctx: Ctx, item: Item): Promise<Priced> {
 // Kubernetes, containers, functions
 // =====================================================================================
 
+/** Azure Red Hat OpenShift, standard clusters: three control-plane VMs at the Linux rate
+ *  (D8s v5, the smallest size Microsoft supports for them) and a licence per worker vCPU.
+ *  learn.microsoft.com/azure/openshift/support-policies-v4, read 2026-10-12. */
+async function aroPrice(ctx: Ctx, item: Item): Promise<Priced> {
+  const vcpu = num(item.spec, 'workers.vcpu', 0);
+  const lic = (await azure.global()).find((r) => r.t === 'c' && r.p === 'Azure Red Hat OpenShift General Purpose' && r.m === '4 vCPU');
+  if (!lic) return unavailable('No Azure Red Hat OpenShift licence price in the price list yet.');
+  const master = sizes(await reg(ctx)).find((s) => s.sku === 'Standard_D8s_v5');
+  if (!master) return unavailable(`Standard_D8s_v5 is not sold in ${ctx.info?.name ?? ctx.region}, so ARO cannot run here.`);
+  const notes = ['Microsoft runs three control-plane VMs in the subscription; they carry no OpenShift licence. Worker VMs are priced as Azure VMs.'];
+  if (num(item.spec, 'workers.n', 0) < 3) notes.push('ARO needs at least three worker VMs inside this card.');
+  return priced([
+    line('Control plane, 3 × D8s v5', 3 * H * item.qty, 'VM-hours', master.linux.r),
+    line('OpenShift worker licence', vcpu * H * item.qty, 'vCPU-hours', lic.r / 4),
+  ], { sku: 'Azure Red Hat OpenShift', notes });
+}
+
 async function azK8sPrice(ctx: Ctx, item: Item): Promise<Priced> {
+  if (str(item.spec, 'flavor') === 'openshift') return aroPrice(ctx, item);
   const rows = svc(await reg(ctx), 'Azure Kubernetes Service');
   const ext = str(item.spec, 'support') === 'extended';
   const r = azMeter(rows, (x) => x.p === 'Azure Kubernetes Service' && x.m === (ext ? 'Standard Long Term Support' : 'Standard Uptime SLA'));
@@ -625,15 +646,32 @@ async function azBackupPrice(ctx: Ctx, item: Item): Promise<Priced> {
   } else if (what === 'file') {
     lines.push(line('Protected file share fee', q, 'share-months', must(azRate(azMeter(rows, (r) => r.m === 'Azure Files Protected Instance')), 'file share instance')));
   } else {
+    // Each database service bills its own backup storage (point-in-time restore), above
+    // a free amount equal to the database size.
+    const own = AZ_DB_BACKUP.find((b) => b.test.test(str(item.spec, 'db.engine')));
+    const meter = own && azMeter(svc(await reg(ctx), own.service), (r) => r.p === own.product && r.m === own.meter);
+    if (own && meter?.length) {
+      return priced([line(`${own.label} backup storage`, gb * q, 'GB-month', must(azRate(meter), `${own.label} backup storage`))], {
+        sku: `${own.label} backup storage`,
+        notes: [`${own.label} keeps backups up to the database size at no charge; enter only the storage above that. Locally redundant (LRS).`],
+      });
+    }
     notes.push('Azure database services keep backups up to the database size at no charge; enter only the storage above that.');
   }
   lines.push(line('Backup storage', gb * q, 'GB-month', must(azRate(stored), 'backup storage')));
   return priced(lines, { sku: 'Azure Backup', notes });
 }
 
+/** The backup storage meter of each Azure database service, by the parent's engine. */
+const AZ_DB_BACKUP = [
+  { test: /^sqlserver/, label: 'Azure SQL Database', service: 'SQL Database', product: 'SQL Database Single/Elastic Pool PITR Backup Storage', meter: 'LRS Data Stored' },
+  { test: /postgres/, label: 'PostgreSQL Flexible Server', service: 'Azure Database for PostgreSQL', product: 'Azure Database for PostgreSQL Flexible Server Backup Storage', meter: 'Backup Storage LRS Data Stored' },
+  { test: /mysql|mariadb/, label: 'MySQL Flexible Server', service: 'Azure Database for MySQL', product: 'Azure Database for MySQL Flexible Server Backup Storage', meter: 'Backup Storage LRS Data Stored' },
+];
+
 /** Azure implementation of each neutral service. */
 export const azureImpls: Record<string, ProviderImpl> = {
-  vm: { product: 'Azure Virtual Machines', fields: azVmFields, models: azModels, price: azVmPrice, adopt: async (_c, item) => ({ ...item, spec: { ...item.spec, 'azure.size': '' }, pricing: { model: 'od' } }) },
+  vm: { product: 'Azure Virtual Machines', fields: azVmFields, models: azModels, off: awsOnlyOff('Azure'), price: azVmPrice, adopt: async (_c, item) => ({ ...item, spec: { ...item.spec, 'azure.size': '' }, pricing: { model: 'od' } }) },
   disk: {
     product: 'Azure Managed Disks',
     fields: async () => [
@@ -648,7 +686,7 @@ export const azureImpls: Record<string, ProviderImpl> = {
   },
   object: { product: 'Azure Blob Storage', price: azObjectPrice },
   file: { product: 'Azure Files', price: azFilePrice },
-  k8s: { product: 'Azure Kubernetes Service', price: azK8sPrice },
+  k8s: { product: 'Azure Kubernetes Service / ARO', price: azK8sPrice },
   containers: { product: 'Azure Container Instances', off: { arch: { arm: ACI_ARM } }, price: azContainersPrice },
   functions: { product: 'Azure Functions', price: azFunctionsPrice },
   db: {

@@ -28,6 +28,12 @@ const fixture = `{
       "preInstalledSw": "NA", "licenseModel": "No License required", "tenancy": "Shared",
       "capacitystatus": "Used", "marketoption": "OnDemand", "operation": "RunInstances",
       "physicalProcessor": "AWS Graviton2 Processor", "processorArchitecture": "64-bit"}},
+    "SHAREDLINUX": {"sku": "SHAREDLINUX", "productFamily": "Compute Instance", "attributes": {
+      "instanceType": "m5.large", "vcpu": "2", "memory": "8 GiB", "operatingSystem": "Linux",
+      "preInstalledSw": "NA", "licenseModel": "No License required", "tenancy": "Shared",
+      "capacitystatus": "Used", "marketoption": "OnDemand", "operation": "RunInstances"}},
+    "REGIONFEE": {"sku": "REGIONFEE", "productFamily": "Fee", "attributes": {
+      "usagetype": "DedicatedUsage", "operation": "Surcharge"}},
     "DEDICATED": {"sku": "DEDICATED", "productFamily": "Compute Instance", "attributes": {
       "instanceType": "m5.large", "vcpu": "2", "memory": "8 GiB", "operatingSystem": "Linux",
       "preInstalledSw": "NA", "licenseModel": "No License required", "tenancy": "Dedicated",
@@ -39,7 +45,9 @@ const fixture = `{
       "LI":   {"LI.od":   {"priceDimensions": {"a": {"unit": "Hrs", "pricePerUnit": {"USD": "0.2120000000"}}}}},
       "GRAVITON": {"G.od": {"priceDimensions": {"a": {"unit": "Hrs", "pricePerUnit": {"USD": "0.0960000000"}}}}},
       "BOX":  {"BOX.od":  {"priceDimensions": {"a": {"unit": "Hrs", "pricePerUnit": {"USD": "0.1200000000"}}}}},
-      "DEDICATED": {"D.od": {"priceDimensions": {"a": {"unit": "Hrs", "pricePerUnit": {"USD": "0.1300000000"}}}}}
+      "DEDICATED": {"D.od": {"priceDimensions": {"a": {"unit": "Hrs", "pricePerUnit": {"USD": "0.1300000000"}}}}},
+      "SHAREDLINUX": {"S.od": {"priceDimensions": {"a": {"unit": "Hrs", "pricePerUnit": {"USD": "0.1150000000"}}}}},
+      "REGIONFEE": {"F.od": {"priceDimensions": {"a": {"unit": "Hrs", "pricePerUnit": {"USD": "2.0000000000"}}}}}
     },
     "Reserved": {
       "LI": {"LI.ri": {
@@ -57,10 +65,14 @@ func TestParseEC2Windows(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []Instance
-	var grav *Instance
+	var grav, linux *Instance
 	for i := range res.Instances {
 		if res.Instances[i].Type == "m6g.large" {
 			grav = &res.Instances[i]
+			continue
+		}
+		if res.Instances[i].OS == "Linux" {
+			linux = &res.Instances[i]
 			continue
 		}
 		got = append(got, res.Instances[i])
@@ -69,7 +81,23 @@ func TestParseEC2Windows(t *testing.T) {
 		t.Errorf("m6g.large must be marked arm (processorArchitecture says only 64-bit); got %+v", grav)
 	}
 	if len(got) != 2 {
-		t.Fatalf("want 2 Windows rows (licence-included + BYOL; :box and dedicated dropped), got %d: %+v", len(got), got)
+		t.Fatalf("want 2 Windows rows (licence-included + BYOL; :box dropped), got %d: %+v", len(got), got)
+	}
+	// The dedicated row is no instance of its own; its rate rides on the shared row.
+	if linux == nil || linux.OnDem != 0.115 || linux.Ded != 0.13 {
+		t.Errorf("m5.large Linux: want od 0.115 and dedicated 0.13, got %+v", linux)
+	}
+	if got[0].Ded != 0 {
+		t.Errorf("Windows has no dedicated row in the fixture; got dd %v", got[0].Ded)
+	}
+	fee := false
+	for _, r := range res.Rows {
+		if r.Key == "DedicatedUsage" && r.Tiers[0].USD == 2 {
+			fee = true
+		}
+	}
+	if !fee {
+		t.Errorf("want the $2/h dedicated region fee row (DedicatedUsage); rows: %+v", res.Rows)
 	}
 	li, byol := got[0], got[1]
 	if li.BYOL || li.OnDem != 0.212 {
