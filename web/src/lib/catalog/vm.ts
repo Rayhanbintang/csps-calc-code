@@ -71,7 +71,9 @@ async function awsPick(ctx: Ctx, spec: Spec): Promise<{ inst?: AwsInstance; list
   const list = awsCandidates(await aws.instances(ctx.region), spec);
   const chosen = str(spec, 'aws.type');
   if (chosen) return { inst: list.find((i) => i.t === chosen), list };
-  return { inst: awsNearest(list, num(spec, 'vcpu', 2), num(spec, 'mem', 8), str(spec, 'arch', 'x86')), list };
+  // Dedicated tenancy: pick among the types AWS sells as Dedicated Instances here.
+  const pool = str(spec, 'tenancy') === 'dedicated' && list.some((i) => i.dd) ? list.filter((i) => i.dd) : list;
+  return { inst: awsNearest(pool, num(spec, 'vcpu', 2), num(spec, 'mem', 8), str(spec, 'arch', 'x86')), list };
 }
 
 /** Prices a per-hour resource under the AWS pricing model chosen on the item. */
