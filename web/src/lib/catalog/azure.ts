@@ -11,7 +11,7 @@ import { ctUsage, fnUsage } from './compute';
 import { customPrice, POINTS } from './more';
 import { destField, vpcPrice } from './network';
 import { azureInstanceFee, geoOf } from './addons';
-import { awsOnly, awsOnlyOff } from './vm';
+import { adoptVm, awsOnly, awsOnlyOff } from './vm';
 import { DB_OFF } from './db';
 import { LB_OFF } from './network';
 
@@ -676,7 +676,7 @@ const AZ_DB_BACKUP = [
 
 /** Azure implementation of each neutral service. */
 export const azureImpls: Record<string, ProviderImpl> = {
-  vm: { product: 'Azure Virtual Machines', fields: azVmFields, models: azModels, off: awsOnlyOff('Azure'), price: azVmPrice, adopt: async (_c, item) => ({ ...item, spec: { ...item.spec, 'azure.size': '' }, pricing: { model: 'od' } }) },
+  vm: { product: 'Azure Virtual Machines', fields: azVmFields, models: azModels, off: awsOnlyOff('Azure'), price: azVmPrice, adopt: (ctx, item, from) => adoptVm(ctx, item, from) },
   disk: {
     product: 'Azure Managed Disks',
     fields: async () => [

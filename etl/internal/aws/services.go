@@ -60,6 +60,9 @@ var Regional = []Service{
 		}},
 	{Code: "AmazonS3", File: "s3", Attrs: []string{"storageClass", "volumeType"},
 		Keep: func(f string, a map[string]string) bool { return !twoRegions.MatchString(a["usagetype"]) }},
+	// Glacier Deep Archive is its own offer, not part of AmazonS3.
+	{Code: "AmazonS3GlacierDeepArchive", File: "s3gda",
+		Keep: func(f string, a map[string]string) bool { return !twoRegions.MatchString(a["usagetype"]) }},
 	{Code: "AmazonEFS", File: "efs"},
 	{Code: "AWSLambda", File: "lambda"},
 	{Code: "AmazonECS", File: "fargate", Keep: func(f string, a map[string]string) bool {

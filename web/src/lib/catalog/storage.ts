@@ -130,7 +130,7 @@ export const disk: Service = {
 const objClasses = opts(['hot', 'Frequent access'], ['cool', 'Infrequent access'], ['cold', 'Archive, instant'], ['archive', 'Archive, hours to restore']);
 
 async function awsObject(ctx: Ctx, item: Item): Promise<Priced> {
-  const rows = await aws.rows(ctx.region, 's3');
+  const rows = [...(await aws.rows(ctx.region, 's3'))];
   const gb = num(item.spec, 'gb', 1000) * item.qty;
   const cls = str(item.spec, 'class', 'hot');
   const storage: Record<string, [string, string, string]> = {
@@ -139,14 +139,16 @@ async function awsObject(ctx: Ctx, item: Item): Promise<Priced> {
     cold: ['TimedStorage-GIR-ByteHrs', 'S3 Glacier Instant Retrieval', 'GIR-'],
     archive: ['TimedStorage-GDA-ByteHrs', 'S3 Glacier Deep Archive', 'GDA-'],
   };
-  let [key, name, req] = storage[cls];
-  let row = awsFind(rows, key);
+  const [key, name, req] = storage[cls];
+  // Glacier Deep Archive has its own offer file (AmazonS3GlacierDeepArchive).
+  if (cls === 'archive') rows.push(...(await aws.rows(ctx.region, 's3gda')));
+  const row = awsFind(rows, key);
   const notes: string[] = [];
   if (!row && cls === 'archive') return unavailable(`S3 Glacier Deep Archive is not sold in ${ctx.info?.name ?? ctx.region}.`);
   const lines: Line[] = [tierLine(`${name} storage`, gb, 'GB-month', must(awsCost(row, gb), name))];
   const puts = num(item.spec, 'puts', 0) * item.qty;
   const gets = num(item.spec, 'gets', 0) * item.qty;
-  const putRow = (req === 'GLACIER-' ? awsFind(rows, 'Requests-GLACIER-Tier1', 'PutObject') : awsFind(rows, `Requests-${req}Tier1`)) ?? awsFind(rows, 'Requests-Tier1');
+  const putRow = (req === 'GDA-' ? awsFind(rows, 'Requests-GDA-Tier1', 'PutObject') : awsFind(rows, `Requests-${req}Tier1`)) ?? awsFind(rows, 'Requests-Tier1');
   const getRow = awsFind(rows, `Requests-${req}Tier2`) ?? awsFind(rows, 'Requests-Tier2');
   if (puts) lines.push(tierLine('PUT, COPY, POST, LIST requests', puts, 'requests', must(awsCost(putRow, puts), 'PUT requests')));
   if (gets) lines.push(tierLine('GET and other requests', gets, 'requests', must(awsCost(getRow, gets), 'GET requests')));

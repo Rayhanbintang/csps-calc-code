@@ -313,3 +313,23 @@ describe.skipIf(!have)('OCI licences', () => {
     expect((await price('oci', 'ap-singapore-1', item('vm', { os: 'rhel', licence: 'byol' }))).unavailable).toBeUndefined();
   });
 });
+
+// Deep Archive lives in its own AWS offer file; the S3 file alone has no storage row for it.
+const hasGda = have && existsSync(join(dir, 'aws/ap-southeast-3/s3gda.json.gz'));
+describe.skipIf(!hasGda)('S3 Glacier Deep Archive', () => {
+  it('prices from the Deep Archive offer: 1,000 GB × $0.002 = $2.00 in Jakarta', async () => {
+    const p = await price('aws', 'ap-southeast-3', item('object', { class: 'archive', gb: 1000, puts: 0, gets: 0 }));
+    expect(p.unavailable).toBeUndefined();
+    near(p.monthly, 2);
+  });
+});
+
+describe.skipIf(!have)('cloud switch flags', () => {
+  it('every cloud flags a VM it matched by size, naming the source type', async () => {
+    const vm = item('vm', { 'aws.type': 'm5.xlarge', vcpu: 4, mem: 16 });
+    for (const [to, region] of [['azure', 'indonesiacentral'], ['gcp', 'asia-southeast2'], ['oci', 'ap-singapore-1']] as const) {
+      const moved = await moveItem(vm, 'aws', to, ctxFor(manifest, to, region));
+      expect(moved.check, to).toBe('Matched by size from AWS m5.xlarge. Check the type.');
+    }
+  });
+});

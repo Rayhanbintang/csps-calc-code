@@ -40,7 +40,7 @@
 
 <section class="advisor" aria-label="AI review">
   <div class="intro">
-    <h2>AI review</h2>
+    <h2>AI review <span class="beta">Beta</span></h2>
     <p>
       A language model reads this tab and points out risks and savings. It gives advice only and never changes your
       cards. Its answers can be wrong: check them before you act.
@@ -73,6 +73,7 @@
     </div>
   {/each}
 
+  {#if turns.length}<p class="mistakes small muted">AI can make mistakes. Check figures and advice before you rely on them.</p>{/if}
   {#if working}<p class="muted" role="status">The model is reading the estimate…</p>{/if}
   {#if problem}<p class="err" role="alert">{problem}</p>{/if}
 
@@ -88,7 +89,9 @@
 <style>
   .advisor { max-width: 760px; display: grid; gap: 14px; }
   .intro { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 8px; justify-items: start; }
-  h2 { margin: 0; font-size: 18px; }
+  h2 { margin: 0; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+  .beta { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; background: var(--warn-bg); border: 1px solid var(--warn-line); }
+  .mistakes { margin-top: -6px; }
   p { margin: 0; }
   a { color: var(--accent); }
   .turn { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; display: grid; gap: 6px; }

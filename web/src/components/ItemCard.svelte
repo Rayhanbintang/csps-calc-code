@@ -136,7 +136,7 @@
           </span>
         </span>
       {/if}
-      {#if p}{money(p.monthly)}{:else}<span class="muted">…</span>{/if}
+      {#if p?.unavailable}<span class="muted" title="Not priced: {p.unavailable}">—</span>{:else if p}{money(p.monthly)}{:else}<span class="muted">…</span>{/if}
       {#if p?.upfront}<div class="small muted">+{money(p.upfront)} once</div>{/if}
       {#if total}<div class="small subtotal" title="Total per month of this card plus everything inside it">{money(total.monthly)}</div>{/if}
     </div>

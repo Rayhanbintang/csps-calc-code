@@ -32,46 +32,58 @@
     }
   })();
 
+  // One screenshot per feature, each made for that feature. No slide sets the same
+  // workload on two clouds side by side: the site shows prices, it does not pick a winner.
   const FEATURES = [
     {
-      img: 'board',
-      title: 'One board, four clouds',
-      text: 'Lay out AWS, Google Cloud, Oracle Cloud and Azure sites side by side. Each region gets its own box with a running total, and the summary compares the clouds.',
+      img: 'board.webp', chip: 'Board',
+      title: 'Every site of a design on one board',
+      text: 'Put an on-premises data centre, an AWS production site and an Azure recovery site on one board. Each region box keeps a running total, and the summary adds the sites up.',
     },
     {
-      img: 'nesting',
+      img: 'nesting.webp', chip: 'Nesting',
       title: 'Cards nest like the real thing',
-      text: 'Put disks inside a VM, VMs inside a cluster and the cluster inside a VPC. Set the node count once and the disks inside multiply with it.',
+      text: 'Disks sit inside a VM, VMs inside a cluster, the cluster inside a VPC. Set three nodes and two disks each, and the card shows six disks in total.',
     },
     {
-      img: 'switch',
-      title: 'Switch clouds in one click',
-      text: 'Convert a whole site to another provider. The calculator picks the nearest region and a matching machine size, prices every card again and flags what to check.',
+      img: 'switch.webp', chip: 'Cloud switch',
+      title: 'Move a site to another cloud',
+      text: 'Pick another provider for a site. The calculator picks the nearest region and a matching machine size, prices every card again and flags each card to check. This animation leaves the prices out: it shows the matching.',
     },
     {
-      img: 'commit',
+      img: 'commit.webp', chip: 'Commitments',
       title: 'Commitments next to on-demand',
-      text: 'Compare on-demand with Reserved Instances, Savings Plans and committed-use discounts for one card, side by side. Upfront payments show apart from the monthly bill.',
+      text: "Select a card to see its on-demand price beside each Savings Plan and Reserved Instance term and payment option. Click one to use it.",
     },
     {
-      img: 'advise',
-      title: 'An AI review of your design',
-      text: 'A language model reads the tab and points out risks and savings, naming the cards. It gives advice only and never changes the estimate.',
+      img: 'copy.webp', chip: 'Copy',
+      title: 'Copy a site at any size',
+      text: 'Copy a card, a region box or a whole site, as it is or scaled. A recovery site at 50% keeps the machine types and halves the counts and storage.',
     },
     {
-      img: 'aws',
-      title: 'Bring in your AWS work',
-      text: "Import the AWS Pricing Calculator's EC2 and EBS bulk upload templates or an estimate's CSV export, and fill AWS's EC2 template from your estimate.",
+      img: 'honest.webp', chip: 'What each cloud sells',
+      title: 'Only what the cloud sells',
+      text: 'One real gap on each cloud. A card that asks for something its cloud does not sell shows the reason instead of a stand-in price, and the option is greyed out in the card settings.',
     },
     {
-      img: 'share',
-      title: 'Share a link, export a file',
-      text: "Send a read-only link or download Excel and PDF. A shared link keeps the numbers you saved and shows today's price beside them.",
+      img: 'aws.webp', chip: 'AWS imports',
+      title: 'Bring in your AWS Pricing Calculator work',
+      text: "Import an estimate's CSV export or the EC2 and EBS bulk upload templates. Each imported card notes AWS's own figure, and services this calculator does not price keep AWS's figure.",
+    },
+    {
+      img: 'share.webp', chip: 'Share link',
+      title: "Share a link that shows today's price",
+      text: "A share link opens a read-only page with the numbers as saved and a Today column priced with today's list. Excel and PDF exports come from the same report.",
+    },
+    {
+      img: 'advise.webp', chip: 'AI review (beta)',
+      title: 'AI review (beta)',
+      text: 'A language model reads the tab and points out risks and savings, naming the cards. It gives advice only and never changes the estimate. AI can make mistakes.',
     },
   ];
 
   // Carousel: a scroll-snap track, so a swipe on a phone moves one slide. The buttons,
-  // dots and arrow keys scroll the same track.
+  // chips and arrow keys scroll the same track.
   let track = $state<HTMLDivElement>();
   let at = $state(0);
   function go(i: number) {
@@ -125,27 +137,28 @@
     </section>
 
     <section class="features" aria-roledescription="carousel" aria-label="What the calculator does">
+      <div class="chips" role="tablist" aria-label="Choose a feature">
+        {#each FEATURES as f, i (f.img)}
+          <button role="tab" aria-selected={at === i} class:on={at === i} onclick={() => go(i)}>{f.chip}</button>
+        {/each}
+      </div>
       <div class="frame">
         <!-- A focusable scroll region that takes arrow keys is the carousel pattern. -->
         <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
         <div class="track" role="region" aria-label="Feature slides, use the arrow keys" bind:this={track} onscroll={onScroll} onkeydown={onKey} tabindex="0">
           {#each FEATURES as f, i (f.img)}
             <figure class="slide" aria-roledescription="slide" aria-label={`${i + 1} of ${FEATURES.length}: ${f.title}`}>
-              <img src={`/landing/${f.img}.webp`} alt={f.title} loading={i === 0 ? 'eager' : 'lazy'} width="1600" height="1000" />
+              <img src={`/landing/${f.img}`} alt={f.title} loading={i === 0 ? 'eager' : 'lazy'} width="1600" height="1000" />
               <figcaption>
+                <span class="count">{i + 1} / {FEATURES.length}</span>
                 <h3>{f.title}</h3>
                 <p>{f.text}</p>
               </figcaption>
             </figure>
           {/each}
         </div>
-        <button class="nav prev" aria-label="Previous feature" onclick={() => go(at - 1)}>‹</button>
-        <button class="nav next" aria-label="Next feature" onclick={() => go(at + 1)}>›</button>
-      </div>
-      <div class="dots" role="tablist" aria-label="Choose a feature">
-        {#each FEATURES as f, i (f.img)}
-          <button role="tab" aria-selected={at === i} aria-label={f.title} class:on={at === i} onclick={() => go(i)}></button>
-        {/each}
+        <button class="nav prev" aria-label="Previous feature" onclick={() => go(at - 1)}><span aria-hidden="true">‹</span></button>
+        <button class="nav next" aria-label="Next feature" onclick={() => go(at + 1)}><span aria-hidden="true">›</span></button>
       </div>
     </section>
   </main>
@@ -191,6 +204,15 @@
   .why h2 { font-size: 22px; margin: 0 0 8px; }
   .why p { color: var(--muted); margin: 0; font-size: 15px; }
   .features { padding-bottom: 56px; }
+  .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 14px; }
+  .chips button {
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .chips button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .frame { position: relative; }
   .track {
     display: flex;
@@ -207,30 +229,36 @@
   .slide { flex: 0 0 100%; scroll-snap-align: start; margin: 0; }
   img { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--line); background: var(--panel-2); }
   figcaption { padding: 14px 18px 18px; }
-  h3 { margin: 0 0 4px; font-size: 18px; }
-  figcaption p { margin: 0; color: var(--muted); max-width: 820px; }
+  .count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  h3 { margin: 2px 0 4px; font-size: 18px; }
+  figcaption p { margin: 0; color: var(--muted); max-width: 860px; }
+  /* Big, solid arrows in the middle of the picture, so nobody misses that there is more. */
   .nav {
     position: absolute;
-    top: 40%;
+    top: calc((100% - 96px) / 2);
     transform: translateY(-50%);
-    width: 44px;
-    height: 44px;
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
-    font-size: 26px;
+    border: 3px solid var(--panel);
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 34px;
     line-height: 1;
-    background: var(--panel);
-    box-shadow: var(--shadow);
+    display: grid;
+    place-items: center;
+    padding: 0 0 4px;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 30%);
   }
-  .prev { left: -14px; }
-  .next { right: -14px; }
-  .dots { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
-  .dots button { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 1px solid var(--field-line); background: transparent; }
-  .dots button.on { background: var(--accent); border-color: var(--accent); }
+  .nav:hover { filter: brightness(1.1); }
+  .prev { left: 12px; }
+  .next { right: 12px; }
   @media (max-width: 760px) {
     .hero { padding-top: 40px; }
-    .prev { left: 4px; }
-    .next { right: 4px; }
-    .nav { width: 36px; height: 36px; font-size: 22px; }
+    .prev { left: 6px; }
+    .next { right: 6px; }
+    .nav { width: 40px; height: 40px; font-size: 26px; top: 30%; }
+    .chips button { padding: 4px 10px; font-size: 12px; }
     .or { display: none; }
   }
 </style>

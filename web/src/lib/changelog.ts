@@ -20,6 +20,9 @@ export const CHANGELOG: Release[] = [
       'A card dropped on empty box space lands where you let go. Region boxes copy into another tab.',
       'Azure database backups use each database\'s own backup price. OCI prices Arm containers on Ampere A1.',
       'New icons for CDN, backup and Google Cloud egress.',
+      'S3 Glacier Deep Archive is priced from its own AWS price list; it was priced as Glacier Flexible Retrieval before.',
+      'A card the cloud does not sell shows a dash, not $0.00. Fields saved before they existed show their default instead of a blank.',
+      'After a cloud switch, Azure VMs carry the same "matched by size" note as the other clouds.',
     ],
   },
   {

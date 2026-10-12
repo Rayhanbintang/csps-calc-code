@@ -149,7 +149,7 @@
       <div class="tabs" role="tablist" aria-label="View">
         <button role="tab" aria-selected={app.view === 'canvas'} class:on={app.view === 'canvas'} onclick={() => (app.view = 'canvas')}>Canvas</button>
         <button role="tab" aria-selected={app.view === 'review'} class:on={app.view === 'review'} onclick={() => (app.view = 'review')}>Review table</button>
-        <button role="tab" aria-selected={app.view === 'advise'} class:on={app.view === 'advise'} onclick={() => (app.view = 'advise')}>AI review</button>
+        <button role="tab" aria-selected={app.view === 'advise'} class:on={app.view === 'advise'} onclick={() => (app.view = 'advise')}>AI review <span class="beta">Beta</span></button>
         <span class="status small muted" aria-live="polite">{app.busy > 0 ? 'Pricing…' : ''}</span>
       </div>
       <Reminders />
@@ -215,6 +215,7 @@
   .resizer:hover::after, .resizer:focus-visible::after, .dragging .resizer::after { background: var(--accent); }
   .dragging { cursor: col-resize; user-select: none; }
   .stage { position: relative; }
+  .beta { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--text); vertical-align: 1px; }
   /* The drawer lies over the right edge of the board. */
   aside {
     position: absolute;

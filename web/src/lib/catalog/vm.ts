@@ -397,13 +397,17 @@ async function ociVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
 // =====================================================================================
 
 /** When a VM moves to another provider, keep the size and pick the equivalent type. */
-async function adoptVm(ctx: Ctx, item: Item, from: Provider): Promise<Item> {
+const CLOUD: Record<string, string> = { aws: 'AWS', gcp: 'Google Cloud', oci: 'OCI', azure: 'Azure', onprem: 'on-premises' };
+const TYPE_KEY: Record<string, string> = { aws: 'aws.type', gcp: 'gcp.type', oci: 'oci.shape', azure: 'azure.size' };
+
+/** A VM moved from another cloud keeps its vCPU and memory; the new cloud picks the closest
+ *  size, and the card asks the SA to check it. */
+export async function adoptVm(_ctx: Ctx, item: Item, from: Provider): Promise<Item> {
   const spec = { ...item.spec };
-  delete spec['aws.type'];
-  delete spec['gcp.type'];
-  delete spec['oci.shape'];
-  const before = item.spec[`${from === 'oci' ? 'oci.shape' : from + '.type'}`];
-  return { ...item, spec, pricing: { model: 'od' }, check: `Matched by size from ${String(before || from.toUpperCase())}. Check the type.` };
+  for (const k of Object.values(TYPE_KEY)) delete spec[k];
+  const before = String(item.spec[TYPE_KEY[from]] ?? '').replace(/^Standard_/, '');
+  const src = before ? `${CLOUD[from] ?? from} ${before}` : CLOUD[from] ?? from;
+  return { ...item, spec, pricing: { model: 'od' }, check: `Matched by size from ${src}. Check the type.` };
 }
 
 /** Keeps vCPU and memory in step with a type the SA picked by hand. */

@@ -45,9 +45,12 @@ Give advice only. You cannot change the estimate; tell the reader what to change
 - Point out risks: missing pieces (backups, monitoring, data transfer between sites, a VPN or interconnect, high availability), single points of failure, odd counts or sizes.
 - Point out savings: commitments (Savings Plans, Reserved Instances, committed use), smaller or newer machine types, storage classes, a cheaper region or cloud, judged from the prices shown.
 - Name the cards you mean, by their names in the estimate.
-- Use only the prices in the estimate. Never invent a price or a discount; when a saving depends on a price you do not have, say so.
+- Use only the prices in the estimate. Never state a price, a discount or a percentage that is not in the estimate; when a saving depends on a price you do not have, say "check the price list".
+- Each card lists the lines its price covers. Read them before saying something is missing (high availability, capacity units, storage).
+- Do not compare regions or clouds on price unless the estimate itself prices both.
 - Free-tier allowances are not taken off the totals; mention them only when they matter.
-- Be short: a few bullet points per heading, plain language, no tables. Answer in the language of the question.`
+- Be short: two headings (Risks, Savings), at most four bullet points each, plain language, no tables. Answer in the language of the question.
+- Before you answer, check each claim against the estimate text. Leave out any claim you cannot point to in it.`
 
 // Summary turns a report into compact text for the model.
 func Summary(r *report.Report) string {
@@ -75,6 +78,13 @@ func Summary(r *report.Report) string {
 					price = "not priced: " + it.Unavailable
 				}
 				fmt.Fprintf(&b, "%s- %s: %g × %s (%s), %s, %s\n", indent, it.Name, it.Qty, it.Service, it.SKU, it.Pricing, price)
+				// The priced lines say what the price covers (Multi-AZ, capacity units, storage).
+				for i, l := range it.Lines {
+					if i == 4 {
+						break
+					}
+					fmt.Fprintf(&b, "%s    · %s: %g %s, $%.2f/month\n", indent, l.Label, l.Qty, l.Unit, l.Monthly)
+				}
 				if b.Len() > MaxSummary {
 					b.WriteString("(the rest of the estimate is cut to keep the request small)\n")
 					return b.String()
@@ -94,9 +104,10 @@ func Ask(ctx context.Context, key, summary string, history []Turn, question stri
 	}
 	msgs = append(msgs, Turn{Role: "user", Content: question})
 	body, _ := json.Marshal(map[string]any{
-		"model": Model, "messages": msgs, "temperature": 0.3, "max_completion_tokens": 1200,
-		// gpt-oss reasons before it answers; low effort leaves the token cap for the answer.
-		"reasoning_effort": "low",
+		"model": Model, "messages": msgs, "temperature": 0.2, "max_completion_tokens": 2400,
+		// gpt-oss reasons before it answers. Low effort made careless claims (invented rates,
+		// misread lines); medium checks its work, and the cap leaves room for both.
+		"reasoning_effort": "medium",
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {

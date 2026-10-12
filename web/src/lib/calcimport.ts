@@ -182,7 +182,8 @@ export function parseCalcCsv(text: string, regions: { code: string; name: string
       }
       return v;
     };
-    const add = (it: Item) => { box.items.push(it); count++; };
+    const add = (it: Item) => { box.items.push(it); done = true; };
+    let done = false;
     const name = row.description || row.service;
 
     switch (row.service.replace(/\s+/g, ' ').trim()) {
@@ -233,14 +234,14 @@ export function parseCalcCsv(text: string, regions: { code: string; name: string
         const v = vpc();
         v.spec = { ...v.spec, nat: Number(v.spec.nat) + nat, natGb: Number(v.spec.natGb ?? 0) };
         v.check = [v.check, `NAT gateways: ${aws}`].filter(Boolean).join(' ');
-        count++;
+        done = true;
         break;
       }
       case 'AWS PrivateLink': {
         const v = vpc();
         v.spec = { ...v.spec, endpoints: Number(v.spec.endpoints) + num(cfg['Number of VPC Interface endpoints per AWS region']) };
         v.check = [v.check, `PrivateLink: ${aws}`].filter(Boolean).join(' ');
-        count++;
+        done = true;
         break;
       }
       case 'Public IPv4 Address': {
@@ -249,7 +250,7 @@ export function parseCalcCsv(text: string, regions: { code: string; name: string
         const ips = num(cfg['Number of In-use public IPv4 addresses']) + num(cfg['Number of Idle public IPv4 addresses']);
         v.spec = { ...v.spec, ips: Number(v.spec.ips) + ips, ipState: 'used' };
         v.check = [v.check, `Public IPv4: ${aws}`].filter(Boolean).join(' ');
-        count++;
+        done = true;
         break;
       }
       case 'Data Transfer': {
@@ -276,6 +277,8 @@ export function parseCalcCsv(text: string, regions: { code: string; name: string
       default:
         add(customCard(row, name, aws, `This calculator does not price ${row.service.trim()}.`));
     }
+    // Rows, not cards: one EC2 row can make two cards, and VPC rows share one card.
+    if (done) count++;
   }
   // Empty VPC cards (every NAT went to a custom card) are dropped.
   for (const b of boxes.values()) b.items = b.items.filter((it) => it.svc !== 'vpc' || Number(it.spec.nat) || Number(it.spec.endpoints) || Number(it.spec.ips));

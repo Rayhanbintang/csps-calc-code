@@ -31,6 +31,7 @@ describe('calculator.aws CSV export', () => {
   it('prices what it can read and keeps AWS\'s figure for the rest', () => {
     const res = parseCalcCsv(csv, REGIONS);
     expect(res.skipped).toEqual([]);
+    expect(res.rows).toBe(14); // every row of the export, counted once
     const items = res.boxes.flatMap((b) => b.items);
     const vms = items.filter((i) => i.svc === 'vm');
     expect(vms.map((v) => [v.spec['aws.type'], v.qty, v.spec.hours])).toEqual([['t4g.nano', 1, 730], ['t4g.nano', 1, 185]]);
