@@ -2,6 +2,7 @@
 // measure", which can be "1 Hour", "10K", "1M", "100 Hours" or "1 GB/Month"; tiered
 // meters repeat with a higher starting count `f`.
 import type { AzRow } from '../prices';
+import { payFree } from '../prices';
 
 /** How many base units one price covers: "10K" → 10,000, "1M" → 1,000,000, "100 Hours" → 100. */
 export function azPer(unit: string): number {
@@ -25,8 +26,9 @@ export function azRate(tiers: AzRow[]): number {
 
 /** Cost of `qty` base units through the meter's tiers. Tier starts are in the meter's
  *  own unit ("10K" tiers start in tens of thousands). */
-export function azCost(tiers: AzRow[], qty: number): number {
-  if (!tiers.length) return NaN;
+export function azCost(meter: AzRow[], qty: number, included = false): number {
+  if (!meter.length) return NaN;
+  const tiers = payFree(meter, (t) => t.r, (t, r) => ({ ...t, r }), included);
   const per = azPer(tiers[0].u);
   const units = qty / per;
   let total = 0;

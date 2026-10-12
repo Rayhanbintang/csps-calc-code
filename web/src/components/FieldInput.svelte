@@ -9,8 +9,9 @@
   <label for={id}>{field.label}{#if field.unit}<span class="unit"> ({field.unit})</span>{/if}</label>
   {#if field.type === 'select'}
     <select {id} value={String(value ?? '')} onchange={(e) => onchange((e.target as HTMLSelectElement).value)}>
-      {#each field.options ?? [] as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+      {#each field.options ?? [] as o (o.value)}<option value={o.value} disabled={!!o.off} title={o.off}>{o.label}{o.off ? ' (not offered here)' : ''}</option>{/each}
     </select>
+    {#each (field.options ?? []).filter((o) => o.off) as o (o.value)}<small class="off">{o.label}: {o.off}</small>{/each}
   {:else if field.type === 'number'}
     <input {id} type="number" min={field.min} step={field.step ?? 'any'} value={Number(value ?? 0)}
       oninput={(e) => { const v = Number((e.target as HTMLInputElement).value); if (Number.isFinite(v)) onchange(field.min !== undefined ? Math.max(field.min, v) : v); }} />
@@ -28,4 +29,5 @@
   .unit { opacity: 0.85; }
   input:not([type='checkbox']), select { width: 100%; }
   small { color: var(--muted); font-size: 11px; }
+  .off { font-style: italic; }
 </style>

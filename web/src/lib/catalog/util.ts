@@ -14,6 +14,8 @@ export interface Ctx {
 export interface Option {
   value: string;
   label: string;
+  /** Why this cloud does not sell the option; the picker shows it greyed out. */
+  off?: string;
 }
 
 export interface Field {
@@ -46,6 +48,9 @@ export interface ProviderImpl {
   fields?: (ctx: Ctx, spec: Spec) => Promise<Field[]>;
   models?: ModelOption[];
   price: (ctx: Ctx, item: Item) => Promise<Priced>;
+  /** Options of shared fields this cloud does not sell: field key → option value → reason.
+   *  The pricer returns `unavailable` for them, so a cloud switch is blocked too. */
+  off?: Record<string, Record<string, string>>;
   /** Called after an item moves onto this provider from another one. */
   adopt?: (ctx: Ctx, item: Item, from: Provider) => Promise<Item>;
 }
@@ -113,8 +118,8 @@ export function awsRate(row: AwsRow | undefined): number {
   return row ? row.t[0][2] : NaN;
 }
 
-export function awsCost(row: AwsRow | undefined, qty: number): number {
-  return row ? tiered(row.t, qty) : NaN;
+export function awsCost(row: AwsRow | undefined, qty: number, included = false): number {
+  return row ? tiered(row.t, qty, included) : NaN;
 }
 
 // ---- GCP row lookup ----
@@ -127,8 +132,8 @@ export function gcpRate(row: GcpRow | undefined): number {
   return row.t[row.t.length - 1][1];
 }
 
-export function gcpCost(row: GcpRow | undefined, qty: number): number {
-  return row ? gcpTiered(row.t, qty) : NaN;
+export function gcpCost(row: GcpRow | undefined, qty: number, included = false): number {
+  return row ? gcpTiered(row.t, qty, included) : NaN;
 }
 
 // ---- OCI row lookup ----
@@ -136,8 +141,8 @@ export function ociPart(rows: OciRow[], part: string): OciRow | undefined {
   return rows.find((r) => r.p === part);
 }
 
-export function ociCost(row: OciRow | undefined, qty: number): number {
-  return row ? ociTiered(row.t, qty) : NaN;
+export function ociCost(row: OciRow | undefined, qty: number, included = false): number {
+  return row ? ociTiered(row.t, qty, included) : NaN;
 }
 
 /** Last (paid) rate of an OCI part, ignoring the free tier. */

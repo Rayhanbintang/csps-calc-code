@@ -67,7 +67,7 @@ export interface Report {
 }
 
 export const DISCLAIMER =
-  'Estimate only. Prices are public list prices in USD. They exclude taxes, negotiated discounts and credits, and support plans unless a site lists one. Free-tier allowances count only where the provider builds them into its price list.';
+  'Estimate only. Prices are public list prices in USD. They exclude taxes, negotiated discounts and credits, and support plans unless a site lists one. Totals never subtract free-tier allowances; the info icon on a card shows them.';
 
 export function buildReport(est: Estimate, prices: Map<string, Priced>, manifest: Manifest | undefined): Report {
   const used = new Set<Provider>();

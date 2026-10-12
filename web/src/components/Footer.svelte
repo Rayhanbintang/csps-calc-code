@@ -12,7 +12,7 @@
     <span><span class="muted small">Upfront</span> <strong class="num">{money(t.upfront)}</strong></span>
     <span><span class="muted small">12 months</span> <strong class="num">{money(t.monthly * 12 + t.upfront)}</strong></span>
   </div>
-  <p class="small muted">{DISCLAIMER} Made by Rayhan. Source on <a href="https://github.com/Rayhanbintang/csps-calc-code" target="_blank" rel="noopener">GitHub</a>.</p>
+  <p class="small muted">{DISCLAIMER} Made by Rayhan. <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/legal">Credits</a> · <a href="https://github.com/Rayhanbintang/csps-calc-code" target="_blank" rel="noopener">Source</a></p>
 </footer>
 
 <style>

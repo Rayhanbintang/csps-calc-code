@@ -104,8 +104,8 @@ describe.skipIf(!have)('Google Cloud and OCI add-ons, CDN and backup', () => {
   it('Cloud Armor Enterprise on one load balancer: one protected resource, no enrolment', async () => {
     near((await price('gcp', 'asia-southeast2', addon('ddos', 'lb', { gb: 0 }))).monthly, 200);
   });
-  it('OCI keeps backups in Object Storage, first 10 GB free', async () => {
-    near((await price('oci', 'ap-singapore-1', addon('backup', 'vm', { gb: 1000 }))).monthly, 990 * 0.0255);
+  it('OCI keeps backups in Object Storage; the free 10 GB are charged: 1,000 GB × $0.0255 = $25.50', async () => {
+    near((await price('oci', 'ap-singapore-1', addon('backup', 'vm', { gb: 1000 }))).monthly, 1000 * 0.0255);
   });
   it('OCI has no CDN', async () => {
     expect((await price('oci', 'ap-singapore-1', item('cdn'))).unavailable).toMatch(/no CDN/);
@@ -200,5 +200,24 @@ describe.skipIf(!hasAzOsLicence)('Azure VMs price RHEL, SUSE and Ubuntu Pro lice
     const p = await price('azure', 'indonesiacentral', item('vm', { vcpu: 2, mem: 8, os: 'rhel' }));
     expect(p.unavailable).toBeUndefined();
     expect(p.lines.some((l) => /Red Hat/.test(l.label))).toBe(true);
+  });
+});
+
+// Free tiers are never taken off (backlog K1); amounts that come with a paid product stay.
+describe.skipIf(!have)('free tiers are charged', () => {
+  it('Google Pub/Sub charges the free 10 GiB: every TiB at $40', async () => {
+    near((await price('gcp', 'asia-southeast2', item('queue', { requests: 10_000_000, kb: 64 }))).lines[0].rate, 40);
+  });
+  it('Azure Service Bus keeps the 13M operations that come with the base fee: 730 × $0.013441', async () => {
+    near((await price('azure', 'indonesiacentral', item('queue', { requests: 10_000_000 }))).monthly, 730 * 0.013441);
+  });
+});
+
+// Backlog K4: no price for a product the cloud does not sell.
+describe.skipIf(!have)('options a cloud does not sell', () => {
+  it('Azure Container Instances refuses Arm, so a switch to Azure is blocked', async () => {
+    const p = await price('azure', 'indonesiacentral', item('containers', { arch: 'arm' }));
+    expect(p.unavailable).toMatch(/x86 only/);
+    expect((await price('azure', 'indonesiacentral', item('containers', { arch: 'x86' }))).unavailable).toBeUndefined();
   });
 });

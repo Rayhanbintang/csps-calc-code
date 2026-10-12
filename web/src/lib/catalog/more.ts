@@ -55,8 +55,8 @@ export const waf: Service = {
         const acls = num(item.spec, 'acls', 1) * q;
         const req = num(item.spec, 'requests', 0) * q;
         return priced([
-          tierLine('WAF policies (first one free)', acls, 'policy-months', must(ociCost(ociPart(rows, 'B94579'), acls), 'WAF instance')),
-          tierLine('Requests (first 10M free)', req, 'requests', must(ociCost(ociPart(rows, 'B94277'), req / 1e6), 'WAF requests')),
+          tierLine('WAF policies', acls, 'policy-months', must(ociCost(ociPart(rows, 'B94579'), acls), 'WAF instance')),
+          tierLine('Requests', req, 'requests', must(ociCost(ociPart(rows, 'B94277'), req / 1e6), 'WAF requests')),
         ], { sku: 'OCI WAF', notes: ['OCI does not charge per rule.'] });
       },
     },
@@ -123,7 +123,7 @@ export const ddos: Service = {
         // The enrolment includes two protected resources; a resource card on its own pays the full rate.
         lines.push(attached
           ? line('Protected resource', res, 'resource-months', must(gcpRate(protectedRow), 'protected resources'))
-          : tierLine('Protected resources (first 2 included)', res, 'resource-months', must(gcpCost(protectedRow, res), 'protected resources')));
+          : tierLine('Protected resources (first 2 come with the subscription)', res, 'resource-months', must(gcpCost(protectedRow, res, true), 'protected resources')));
         const fee = cdnOn ? /^Networking Cloud Armor Enterprise Paygo: Data Processing Fee for CDN$/ : /^Networking Cloud Armor Enterprise Paygo: Data Processing Fee for Load Balancer$/;
         lines.push(tierLine('Data processing', gb, 'GiB', must(gcpCost(gcpFind(rows, fee), gb), 'Armor data processing')));
         return priced(lines, { sku: 'Cloud Armor Enterprise, pay as you go' });
@@ -166,11 +166,11 @@ export const apigw: Service = {
       product: 'API Gateway',
       price: async (_ctx, item) => {
         // Google's price feed has no SKU for API Gateway calls; these are the published
-        // rates from cloud.google.com/api-gateway/pricing: first 2M calls free, then
-        // $3.00 per million up to 1B, then $1.50 per million.
+        // rates from cloud.google.com/api-gateway/pricing: $3.00 per million up to 1B, then
+        // $1.50 per million. The first 2M free calls a month are charged like the rest.
         const req = num(item.spec, 'requests', 0) * item.qty;
-        const cost = Math.max(0, Math.min(req, 1e9) - 2e6) * 3e-6 + Math.max(0, req - 1e9) * 1.5e-6;
-        return priced([tierLine('API calls (first 2M free)', req, 'calls', cost)], {
+        const cost = Math.min(req, 1e9) * 3e-6 + Math.max(0, req - 1e9) * 1.5e-6;
+        return priced([tierLine('API calls', req, 'calls', cost)], {
           sku: 'API Gateway', notes: ['Rate from Google\'s published API Gateway price page; not refreshed daily.'],
         });
       },
@@ -221,7 +221,7 @@ export const queue: Service = {
         // Pub/Sub bills throughput: publish plus delivery, at least 1 KB per message.
         const msgs = (num(item.spec, 'requests', 0) / 3) * item.qty;
         const tib = (msgs * Math.max(1, num(item.spec, 'kb', 4)) * 2 * 1000) / 1024 ** 4;
-        return priced([tierLine('Message throughput (first 10 GiB free)', tib, 'TiB', must(gcpCost(gcpFind(g, /^Message Delivery Basic$/, 'OnDemand', 'pubsub'), tib), 'Pub/Sub throughput'))], {
+        return priced([tierLine('Message throughput', tib, 'TiB', must(gcpCost(gcpFind(g, /^Message Delivery Basic$/, 'OnDemand', 'pubsub'), tib), 'Pub/Sub throughput'))], {
           sku: 'Pub/Sub', notes: ['Requests are converted to messages at three requests (send, receive, delete) per message.'],
         });
       },
@@ -231,7 +231,7 @@ export const queue: Service = {
       price: async (_ctx, item) => {
         const rows = await oci.all();
         const req = num(item.spec, 'requests', 0) * item.qty;
-        return priced([tierLine('Requests (first 1M free)', req, 'requests', must(ociCost(ociPart(rows, 'B95697'), req / 1e6), 'Queue requests'))], { sku: 'OCI Queue' });
+        return priced([tierLine('Requests', req, 'requests', must(ociCost(ociPart(rows, 'B95697'), req / 1e6), 'Queue requests'))], { sku: 'OCI Queue' });
       },
     },
   },
@@ -283,8 +283,8 @@ export const notify: Service = {
         const rows = await oci.all();
         const h = num(item.spec, 'http', 0) * item.qty, e = num(item.spec, 'email', 0) * item.qty;
         return priced([
-          tierLine('HTTPS deliveries (first 1M free)', h, 'deliveries', must(ociCost(ociPart(rows, 'B90940'), h / 1e6), 'HTTPS delivery')),
-          tierLine('Email deliveries (first 1,000 free)', e, 'emails', must(ociCost(ociPart(rows, 'B90941'), e / 1000), 'email delivery')),
+          tierLine('HTTPS deliveries', h, 'deliveries', must(ociCost(ociPart(rows, 'B90940'), h / 1e6), 'HTTPS delivery')),
+          tierLine('Email deliveries', e, 'emails', must(ociCost(ociPart(rows, 'B90941'), e / 1000), 'email delivery')),
         ], { sku: 'OCI Notifications', notes: ['Publishing to a topic has no charge.'] });
       },
     },
@@ -335,8 +335,8 @@ export const monitoring: Service = {
         // Google starts charging for alerting policies on 1 Sep 2027 (cloud.google.com/products/observability/pricing):
         // $0.35 a month per metric reference, plus $0.50 per million points the conditions read.
         const lines = [
-          tierLine('Custom metric volume (first 150 MiB free)', mib, 'MiB', must(gcpCost(gcpFind(g, /^Metric Volume$/, 'OnDemand', 'monitoring'), mib), 'metric volume')),
-          tierLine('Logs ingested (first 50 GiB free)', l, 'GiB', must(gcpCost(gcpFind(g, /^Log Storage cost$/, 'OnDemand', 'logging'), l), 'log ingestion')),
+          tierLine('Custom metric volume', mib, 'MiB', must(gcpCost(gcpFind(g, /^Metric Volume$/, 'OnDemand', 'monitoring'), mib), 'metric volume')),
+          tierLine('Logs ingested', l, 'GiB', must(gcpCost(gcpFind(g, /^Log Storage cost$/, 'OnDemand', 'logging'), l), 'log ingestion')),
           line('Logs kept past 30 days', s, 'GiB-month', must(gcpRate(gcpFind(g, /^Log Retention cost$/, 'OnDemand', 'logging')), 'log retention')),
         ];
         const notes = ['Metric volume assumes one point a minute, 8 bytes each.'];
@@ -355,8 +355,8 @@ export const monitoring: Service = {
         const pts = (num(item.spec, 'metrics', 0) * POINTS * q) / 1e6;
         const s = num(item.spec, 'stored', 0) * q;
         return priced([
-          tierLine('Metric data points (first 500M free)', pts, 'million points', must(ociCost(ociPart(rows, 'B90925'), pts), 'monitoring ingestion')),
-          tierLine('Log storage (first 10 GB free)', s, 'GB-month', must(ociCost(ociPart(rows, 'B92593'), s), 'log storage')),
+          tierLine('Metric data points', pts, 'million points', must(ociCost(ociPart(rows, 'B90925'), pts), 'monitoring ingestion')),
+          tierLine('Log storage', s, 'GB-month', must(ociCost(ociPart(rows, 'B92593'), s), 'log storage')),
         ], { sku: 'OCI Monitoring + Logging', notes: ['OCI does not charge for alarms or log ingestion.'] });
       },
     },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { zonesOf } from './zones';
-import { freeTier } from './freetier';
+import { freeTier, freeTierText } from './freetier';
 import type { Item } from './types';
 
 const it_ = (svc: string, spec: Item['spec'] = {}): Item => ({ id: 'x', svc, qty: 1, spec });
@@ -24,9 +24,9 @@ describe('zone badge', () => {
 });
 
 describe('free tiers', () => {
-  it('say whether the price already counts them', () => {
-    expect(freeTier('functions', 'aws')?.inPrice).toBe('no');
-    expect(freeTier('egress', 'oci')?.inPrice).toBe('yes');
+  it('are listed per service and cloud, and the text says totals charge them', () => {
+    expect(freeTier('egress', 'oci')?.text).toMatch(/10 TB/);
+    expect(freeTierText('notify', 'aws')).toMatch(/charges this in full/);
     expect(freeTier('vpc', 'aws')).toBeUndefined();
   });
 });

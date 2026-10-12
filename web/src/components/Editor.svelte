@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { fly } from 'svelte/transition';
   import { view } from '../lib/board.svelte';
-  import { app, askRemove, find, repriceAll, repriceTabs, saveTabs } from '../lib/store.svelte';
+  import { app, askRemove, find, newTab, repriceAll, repriceTabs, saveTabs } from '../lib/store.svelte';
   import Header from './Header.svelte';
   import Tabs from './Tabs.svelte';
   import Palette from './Palette.svelte';
@@ -14,6 +14,13 @@
   import Footer from './Footer.svelte';
   import DragGhost from './DragGhost.svelte';
   import CopyDialog from './CopyDialog.svelte';
+
+  // "Create a new estimate" on the landing page arrives as /app?new: open a fresh tab,
+  // unless the tab on screen is still empty.
+  if (new URLSearchParams(location.search).has('new')) {
+    if (app.est.accounts.some((a) => a.regions.some((r) => r.items.length))) newTab();
+    history.replaceState(null, '', '/app');
+  }
 
   // Price again and keep the draft whenever the estimate or the price list changes.
   // The pricing run itself is untracked: it reads and writes state (prices, the busy

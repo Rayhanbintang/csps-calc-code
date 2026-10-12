@@ -93,5 +93,7 @@ jobs:
           sleep 20
           curl -fsS "$SITE/" | grep -q "csps-calc"
           curl -fsS "$SITE/prices/manifest.json" | grep -q '"aws"'
+          curl -fsS "$SITE/app" | grep -q "csps-calc"
+          curl -fsS "$SITE/privacy" | grep -q "csps-calc"
           code=$(curl -s -o /dev/null -w "%{http_code}" "$SITE/api/estimates?slug=AAAAAAAAAAAA")
           test "$code" = "404"

@@ -97,7 +97,7 @@ func (a Account) Site() string {
 }
 
 // Disclaimer goes on every page and file.
-const Disclaimer = "Estimate only. Prices are public list prices in USD. They exclude taxes, negotiated discounts and credits, and support plans unless a site lists one. Free-tier allowances count only where the provider builds them into its price list."
+const Disclaimer = "Estimate only. Prices are public list prices in USD. They exclude taxes, negotiated discounts and credits, and support plans unless a site lists one. Totals never subtract free-tier allowances; the info icon on a card shows them."
 
 // Limits keep one request from making a huge file.
 const (

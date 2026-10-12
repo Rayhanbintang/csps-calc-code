@@ -230,9 +230,9 @@ describe.skipIf(!hasAzure)('Azure', () => {
     near(p.monthly, (2 * 730 * 0.10575 + 100 * 0.1242) * 2);
   });
 
-  it('internet egress: the first 100 GB are free, then $0.12: 1,000 GB = $108.00', async () => {
+  it('internet egress: the free 100 GB are charged too: 1,000 GB × $0.12 = $120.00', async () => {
     const p = await price('azure', r, item('egress', { gb: 1000, to: 'internet' }));
-    near(p.monthly, 108);
+    near(p.monthly, 120);
   });
 
   it('Service Bus Standard here lists the base charge per hour: 730 × $0.013441 = $9.81', async () => {

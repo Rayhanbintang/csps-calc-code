@@ -164,6 +164,10 @@ function asPriced(n: Node): Item {
   return { ...rest, qty: n.item.qty * n.mult };
 }
 
+/** The price key each item wants now. A reply for an older key (the item changed cloud,
+ *  region or spec while it was in flight) must not overwrite the newer price. */
+const wanted = new Map<string, string>();
+
 export async function repriceAll(): Promise<void> {
   const m = app.manifest;
   const live = new Set<string>();
@@ -175,6 +179,7 @@ export async function repriceAll(): Promise<void> {
         live.add(item.id);
         const snapshot = asPriced(node);
         const key = keyOf(acc.provider, box.region, snapshot);
+        wanted.set(item.id, key);
         const hit = memo.get(key);
         if (hit) {
           if (prices.get(item.id) !== hit) prices.set(item.id, hit);
@@ -192,11 +197,12 @@ export async function repriceAll(): Promise<void> {
             // Failed lookups are not kept, so a network hiccup does not stick.
             if (!res.unavailable) memo.set(key, res);
             inflight.delete(key);
-            if (find(item.id)) prices.set(item.id, res);
+            if (wanted.get(item.id) === key && find(item.id)) prices.set(item.id, res);
           }).finally(() => app.busy--),
         );
       }
   for (const id of [...prices.keys()]) if (!live.has(id)) prices.delete(id);
+  for (const id of [...wanted.keys()]) if (!live.has(id)) wanted.delete(id);
   await Promise.all(jobs);
 }
 

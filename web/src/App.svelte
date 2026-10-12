@@ -1,13 +1,17 @@
 <script lang="ts">
-  import Editor from './components/Editor.svelte';
-  import SharedView from './components/SharedView.svelte';
-
-  const m = /^\/e\/([A-Za-z0-9_-]{6,40})\/?$/.exec(location.pathname);
+  // Hand-rolled routes; every link between pages is a full page load.
+  const path = location.pathname.replace(/\/+$/, '') || '/';
+  const m = /^\/e\/([A-Za-z0-9_-]{6,40})$/.exec(path);
   const slug = m?.[1];
+  const legal = path === '/privacy' || path === '/terms' || path === '/legal' ? (path.slice(1) as 'privacy' | 'terms' | 'legal') : undefined;
 </script>
 
 {#if slug}
-  <SharedView {slug} />
+  {#await import('./components/SharedView.svelte') then V}<V.default {slug} />{/await}
+{:else if path === '/app'}
+  {#await import('./components/Editor.svelte') then V}<V.default />{/await}
+{:else if legal}
+  {#await import('./components/Legal.svelte') then V}<V.default page={legal} />{/await}
 {:else}
-  <Editor />
+  {#await import('./components/Landing.svelte') then V}<V.default />{/await}
 {/if}

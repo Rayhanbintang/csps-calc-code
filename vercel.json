@@ -7,7 +7,13 @@
   "functions": {
     "api/*.go": { "memory": 1024, "maxDuration": 30 }
   },
-  "rewrites": [{ "source": "/e/:slug", "destination": "/index.html" }],
+  "rewrites": [
+    { "source": "/e/:slug", "destination": "/index.html" },
+    { "source": "/app", "destination": "/index.html" },
+    { "source": "/privacy", "destination": "/index.html" },
+    { "source": "/terms", "destination": "/index.html" },
+    { "source": "/legal", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

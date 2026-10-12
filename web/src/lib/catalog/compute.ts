@@ -143,7 +143,7 @@ export const functions: Service = {
         const cpu = gcpFind(rows, /^Cloud Run functions CPU \(Request-based billing\) in /, 'OnDemand', 'functions');
         const memR = gcpFind(rows, /^Cloud Run functions Memory \(Request-based billing\) in /, 'OnDemand', 'functions');
         return priced([
-          tierLine('Invocations (first 2M free)', req, 'invocations', must(gcpCost(inv, req), 'invocations')),
+          tierLine('Invocations', req, 'invocations', must(gcpCost(inv, req), 'invocations')),
           line(`CPU (${gcpFnCpu(mb)} vCPU at ${mb} MB)`, cpuS, 'vCPU-seconds', must(gcpRate(cpu), 'functions CPU')),
           line('Memory', gbs, 'GiB-seconds', must(gcpRate(memR), 'functions memory')),
         ], { sku: 'Cloud Run functions, request-based billing' });
@@ -155,8 +155,8 @@ export const functions: Service = {
         const rows = await oci.all();
         const { req, gbs } = fnUsage(item);
         return priced([
-          tierLine('Invocations (first 2M free)', req, 'invocations', must(ociCost(ociPart(rows, 'B90618'), req / 1e6), 'invocations')),
-          tierLine('Execution time (first 400,000 GB-s free)', gbs, 'GB-seconds', must(ociCost(ociPart(rows, 'B90617'), gbs / 10000), 'execution time')),
+          tierLine('Invocations', req, 'invocations', must(ociCost(ociPart(rows, 'B90618'), req / 1e6), 'invocations')),
+          tierLine('Execution time', gbs, 'GB-seconds', must(ociCost(ociPart(rows, 'B90617'), gbs / 10000), 'execution time')),
         ], { sku: 'OCI Functions' });
       },
     },

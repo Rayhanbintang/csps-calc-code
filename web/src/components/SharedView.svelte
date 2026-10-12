@@ -7,6 +7,7 @@
   import type { Report } from '../lib/report';
   import { loadManifest } from '../lib/prices';
   import { priceEstimate } from '../lib/engine';
+  import SiteFooter from './SiteFooter.svelte';
 
   let { slug }: { slug: string } = $props();
   let saved = $state<Saved | undefined>();
@@ -42,7 +43,7 @@
   function editCopy() {
     if (!saved) return;
     saveDraft({ ...saved.estimate, name: `${saved.estimate.name} (copy)` });
-    location.href = '/';
+    location.href = '/app';
   }
 
   let open = $state<Record<string, boolean>>({});
@@ -50,7 +51,7 @@
 
 <div class="page">
   <header>
-    <a class="brand" href="/">csps-calc</a>
+    <a class="brand" href="/">Cloud Service Provider<span class="s">S</span> Calculator</a>
     {#if saved}<button class="primary" onclick={editCopy}>Edit a copy with today's prices</button>{/if}
   </header>
 
@@ -122,11 +123,13 @@
     <p class="disc small">{DISCLAIMER}</p>
   {/if}
 </div>
+<SiteFooter />
 
 <style>
   .page { max-width: 1040px; margin: 0 auto; padding: 16px; }
   header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   .brand { font-weight: 800; font-size: 17px; color: var(--text); text-decoration: none; }
+  .brand .s { color: var(--accent); }
   h1 { margin: 6px 0 2px; font-size: 22px; }
   h2 { font-size: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   h2 .num { margin-left: auto; }

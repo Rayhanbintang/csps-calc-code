@@ -97,6 +97,11 @@
   }
 
   const visible = (fl: Field) => !fl.show || (f ? fl.show(f.item.spec) : true);
+  /** The field with the options this cloud does not sell marked, so they show greyed out. */
+  const marked = (fl: Field): Field => {
+    const off = impl?.off?.[fl.key];
+    return off && fl.options ? { ...fl, options: fl.options.map((o) => (off[o.value] ? { ...o, off: off[o.value] } : o)) } : fl;
+  };
 </script>
 
 {#if f && svc}
@@ -120,7 +125,7 @@
           <span>Quantity</span>
           <input type="number" min="1" step="1" value={f.item.qty} oninput={(e) => (f.item.qty = Math.max(1, Math.round(Number((e.target as HTMLInputElement).value) || 1)))} />
         </label>
-        {#each svc.fields.filter(visible) as fl (fl.key)}
+        {#each svc.fields.filter(visible).map(marked) as fl (fl.key)}
           <FieldInput field={fl} value={f.item.spec[fl.key]} onchange={(v) => setField(fl.key, v)} />
         {/each}
         {#each extra as fl (fl.key)}

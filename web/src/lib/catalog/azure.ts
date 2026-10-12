@@ -200,8 +200,8 @@ async function azDiskPrice(ctx: Ctx, item: Item): Promise<Priced> {
     // Capacity, IOPS and MB/s are billed per hour; the first 3,000 IOPS and 125 MB/s are free.
     return priced([
       line('Premium SSD v2 capacity', gb * H * q, 'GiB-hours', must(azRate(cap), 'Premium SSD v2 capacity')),
-      tierLine('IOPS (first 3,000 free)', num(item.spec, 'iops', 3000) * H * q, 'IOPS-hours', must(azCost(iops, num(item.spec, 'iops', 3000)) * H * q, 'Premium SSD v2 IOPS')),
-      tierLine('Throughput (first 125 MB/s free)', num(item.spec, 'mbps', 125) * H * q, 'MBps-hours', must(azCost(mbps, num(item.spec, 'mbps', 125)) * H * q, 'Premium SSD v2 throughput')),
+      tierLine('IOPS (first 3,000 come with the disk)', num(item.spec, 'iops', 3000) * H * q, 'IOPS-hours', must(azCost(iops, num(item.spec, 'iops', 3000), true) * H * q, 'Premium SSD v2 IOPS')),
+      tierLine('Throughput (first 125 MB/s come with the disk)', num(item.spec, 'mbps', 125) * H * q, 'MBps-hours', must(azCost(mbps, num(item.spec, 'mbps', 125), true) * H * q, 'Premium SSD v2 throughput')),
     ], { sku: 'Premium SSD v2' });
   }
   const [prefix, product] = kind === 'standard-hdd' ? ['S', 'Standard HDD Managed Disks'] : kind === 'standard-ssd' ? ['E', 'Standard SSD Managed Disks'] : ['P', 'Premium SSD Managed Disks'];
@@ -267,12 +267,13 @@ async function azContainersPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const { tasks, hrs, vcpu, gb } = ctUsage(item);
   const cpu = azMeter(rows, (r) => r.p === 'Container Instances' && r.m === 'Standard vCPU Duration');
   const mem = azMeter(rows, (r) => r.p === 'Container Instances' && r.m === 'Standard Memory Duration');
-  const notes = str(item.spec, 'arch') === 'arm' ? ['Container Instances runs x86 only; priced as x86.'] : [];
+  if (str(item.spec, 'arch') === 'arm') return unavailable(ACI_ARM);
   return priced([
     line('vCPU', tasks * vcpu * hrs, 'vCPU-hours', must(azRate(cpu), 'Container Instances vCPU')),
     line('Memory', tasks * gb * hrs, 'GB-hours', must(azRate(mem), 'Container Instances memory')),
-  ], { sku: 'Container Instances, Linux', notes });
+  ], { sku: 'Container Instances, Linux' });
 }
+const ACI_ARM = 'Azure Container Instances runs x86 only.';
 
 async function azFunctionsPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const rows = svc(await reg(ctx), 'Functions').filter((r) => r.p === 'Functions');
@@ -280,8 +281,8 @@ async function azFunctionsPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const exec = azMeter(rows, (r) => r.m === 'Standard Total Executions');
   const time = azMeter(rows, (r) => r.m === 'Standard Execution Time');
   return priced([
-    tierLine('Executions (first 1M free)', req, 'executions', must(azCost(exec, req), 'Functions executions')),
-    tierLine('Execution time (first 400,000 GB-s free)', gbs, 'GB-seconds', must(azCost(time, gbs), 'Functions execution time')),
+    tierLine('Executions', req, 'executions', must(azCost(exec, req), 'Functions executions')),
+    tierLine('Execution time', gbs, 'GB-seconds', must(azCost(time, gbs), 'Functions execution time')),
   ], { sku: 'Functions, Consumption plan' });
 }
 
@@ -551,7 +552,7 @@ async function azApigwPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const rows = svc(await reg(ctx), 'API Management');
   const req = num(item.spec, 'requests', 0) * item.qty;
   const calls = azMeter(rows, (r) => r.k === 'Consumption' && r.m === 'Consumption Calls');
-  return priced([tierLine('API calls (first 1M free)', req, 'calls', must(azCost(calls, req), 'API Management calls'))], { sku: 'API Management, Consumption tier' });
+  return priced([tierLine('API calls', req, 'calls', must(azCost(calls, req), 'API Management calls'))], { sku: 'API Management, Consumption tier' });
 }
 
 async function azQueuePrice(ctx: Ctx, item: Item): Promise<Priced> {
@@ -564,7 +565,7 @@ async function azQueuePrice(ctx: Ctx, item: Item): Promise<Priced> {
   const ops = azMeter(rows, (r) => r.k === 'Standard' && r.m === 'Standard Messaging Operations');
   return priced([
     line('Service Bus Standard base', item.qty, 'namespace-months', must(base, 'Service Bus base')),
-    tierLine('Messaging operations (first 13M included)', req, 'operations', must(azCost(ops, req), 'Service Bus operations')),
+    tierLine('Messaging operations (first 13M come with the base fee)', req, 'operations', must(azCost(ops, req, true), 'Service Bus operations')),
   ], { sku: 'Service Bus Standard' });
 }
 
@@ -573,7 +574,7 @@ async function azNotifyPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const opsN = (num(item.spec, 'publishes', 0) + num(item.spec, 'http', 0)) * item.qty;
   const ops = azMeter(rows, (r) => r.m === 'Standard Operations');
   const notes = num(item.spec, 'email', 0) ? ['Event Grid does not send email; Azure Communication Services does, not priced here.'] : [];
-  return priced([tierLine('Event Grid operations (first 100,000 free)', opsN, 'operations', must(azCost(ops, opsN), 'Event Grid operations'))], { sku: 'Event Grid, Basic', notes });
+  return priced([tierLine('Event Grid operations', opsN, 'operations', must(azCost(ops, opsN), 'Event Grid operations'))], { sku: 'Event Grid, Basic', notes });
 }
 
 async function azMonitoringPrice(ctx: Ctx, item: Item): Promise<Priced> {
@@ -590,7 +591,7 @@ async function azMonitoringPrice(ctx: Ctx, item: Item): Promise<Priced> {
   return priced([
     tierLine('Custom metric samples', samples, 'samples', must(azCost(metric, samples), 'metric ingestion')),
     tierLine('Metric alert rules', alarms, 'time series-months', must(azCost(alert, alarms), 'metric alerts')),
-    tierLine('Logs ingested (first 5 GB free)', logs, 'GB', must(azCost(ingest, logs), 'log ingestion')),
+    tierLine('Logs ingested', logs, 'GB', must(azCost(ingest, logs), 'log ingestion')),
     line('Logs kept past 31 days', stored, 'GB-month', must(azRate(retain), 'log retention')),
   ], { sku: 'Azure Monitor + Log Analytics', notes: ['Metric samples assume one a minute per custom metric.'] });
 }
@@ -648,7 +649,7 @@ export const azureImpls: Record<string, ProviderImpl> = {
   object: { product: 'Azure Blob Storage', price: azObjectPrice },
   file: { product: 'Azure Files', price: azFilePrice },
   k8s: { product: 'Azure Kubernetes Service', price: azK8sPrice },
-  containers: { product: 'Azure Container Instances', price: azContainersPrice },
+  containers: { product: 'Azure Container Instances', off: { arch: { arm: ACI_ARM } }, price: azContainersPrice },
   functions: { product: 'Azure Functions', price: azFunctionsPrice },
   db: {
     product: 'Azure Database / Azure SQL',

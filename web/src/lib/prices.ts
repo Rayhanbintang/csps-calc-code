@@ -106,10 +106,30 @@ export const oci = {
   all: () => getGz<OciRow[]>(`oci/prices.json`),
 };
 
+/** The calculator never takes a free allowance off a total (freetier.ts shows them).
+ *  With `chargeFree` on, a $0 first tier followed by a paid tier bills at the first paid
+ *  rate. Tests switch it off to see which items a price list's free tier would change. */
+export const tierPolicy = { chargeFree: true };
+
+/** The tiers with a free first tier billed at the first paid rate, unless the $0 amount
+ *  comes with the product itself (`included`, e.g. a disk's baseline IOPS). */
+export function payFree<T>(tiers: T[], usd: (t: T) => number, withUsd: (t: T, usd: number) => T, included: boolean): T[] {
+  if (included || !tierPolicy.chargeFree || tiers.length < 2 || usd(tiers[0]) !== 0) return tiers;
+  const paid = tiers.find((t) => usd(t) > 0);
+  if (!paid) return tiers;
+  const rate = usd(paid);
+  let free = true;
+  return tiers.map((t) => {
+    if (free && usd(t) === 0) return withUsd(t, rate);
+    free = false;
+    return t;
+  });
+}
+
 /** Price of `qty` units through tiers, where each tier covers [from, to). */
-export function tiered(tiers: Tier[], qty: number): number {
+export function tiered(tiers: Tier[], qty: number, included = false): number {
   let total = 0;
-  for (const [from, to, usd] of tiers) {
+  for (const [from, to, usd] of payFree(tiers, (t) => t[2], (t, u) => [t[0], t[1], u] as Tier, included)) {
     if (qty <= from) break;
     const top = to === null ? qty : Math.min(qty, to);
     total += (top - from) * usd;
@@ -118,12 +138,12 @@ export function tiered(tiers: Tier[], qty: number): number {
 }
 
 /** GCP tiers are [start, usd] pairs; a tier runs until the next one starts. */
-export function gcpTiered(tiers: [number, number][], qty: number): number {
+export function gcpTiered(tiers: [number, number][], qty: number, included = false): number {
   const t: Tier[] = tiers.map(([from, usd], i) => [from, i + 1 < tiers.length ? tiers[i + 1][0] : null, usd]);
-  return tiered(t, qty);
+  return tiered(t, qty, included);
 }
 
 /** OCI tiers are [from, to, usd] with to = -1 for no limit. */
-export function ociTiered(tiers: [number, number, number][], qty: number): number {
-  return tiered(tiers.map(([f, t, u]) => [f, t < 0 ? null : t, u] as Tier), qty);
+export function ociTiered(tiers: [number, number, number][], qty: number, included = false): number {
+  return tiered(tiers.map(([f, t, u]) => [f, t < 0 ? null : t, u] as Tier), qty, included);
 }

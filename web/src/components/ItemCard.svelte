@@ -9,7 +9,7 @@
   import { zonesOf } from '../lib/zones';
   import { iconUrl } from '../lib/icons';
   import { flash } from '../lib/board.svelte';
-  import { freeTier, freeTierText, NEW_ACCOUNT } from '../lib/freetier';
+  import { CHARGED, freeTier, freeTierText, NEW_ACCOUNT } from '../lib/freetier';
 
   let {
     item,
@@ -116,15 +116,6 @@
         {#if item.folded && kids.length}<span> · {kids.length} inside</span>{/if}
       </div>
       {#if item.check}<div class="flag small">⚑ {item.check}</div>{/if}
-      {#if ft && ftOpen}
-        <div class="ftbox small" role="note">
-          <strong>Free tier.</strong> {ft.text}
-          <span class="ftin {ft.inPrice}">{ft.inPrice === 'yes' ? 'Already in this price.' : ft.inPrice === 'no' ? 'This price leaves it out.' : 'Some of it is in this price.'}</span>
-          {#if ft.detail}{ft.detail}{/if}
-          {#if NEW_ACCOUNT[provider]}<div class="muted">{NEW_ACCOUNT[provider]!.text}</div>{/if}
-          <a href={ft.src} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>Source</a>
-        </div>
-      {/if}
     </div>
     <button class="ghost copy" aria-label="Copy {item.name || svc?.label}" title="Copy this card"
       onclick={(e) => { e.stopPropagation(); app.copy = { kind: 'item', id: item.id }; }}>⧉</button>
@@ -132,8 +123,18 @@
       onclick={(e) => { e.stopPropagation(); askRemove(item); }}>🗑</button>
     <div class="cost num">
       {#if ft}
-        <button class="ghost ft" class:on={ftOpen} aria-expanded={ftOpen} aria-label="Free tier" title={freeTierText(item.svc, provider)}
-          onclick={(e) => { e.stopPropagation(); ftOpen = !ftOpen; }}>ⓘ</button>
+        <span class="ftwrap" role="presentation" onpointerleave={() => (ftOpen = false)}>
+          <button class="ghost ft" class:on={ftOpen} aria-expanded={ftOpen} aria-label={freeTierText(item.svc, provider)}
+            onclick={(e) => { e.stopPropagation(); ftOpen = !ftOpen; }}>ⓘ</button>
+          <span class="ftpop small" class:open={ftOpen} role="tooltip">
+            <strong>Free tier</strong>
+            <span>{ft.text}</span>
+            {#if ft.detail}<span>{ft.detail}</span>{/if}
+            <span class="charged">{CHARGED}</span>
+            {#if NEW_ACCOUNT[provider]}<span class="muted">{NEW_ACCOUNT[provider]!.text}</span>{/if}
+            <a href={ft.src} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>Source</a>
+          </span>
+        </span>
       {/if}
       {#if p}{money(p.monthly)}{:else}<span class="muted">…</span>{/if}
       {#if p?.upfront}<div class="small muted">+{money(p.upfront)} once</div>{/if}
@@ -271,10 +272,27 @@
   .az.single { border-style: dashed; }
   .ft { padding: 0 3px; border: 0; color: var(--muted); font-size: 13px; font-weight: 400; vertical-align: 1px; }
   .ft:hover, .ft.on { color: var(--accent); }
-  .ftbox { margin-top: 5px; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); font-weight: 400; display: grid; gap: 3px; }
-  .ftin { font-weight: 600; }
-  .ftin.yes { color: var(--ok); }
-  .ftin.no { color: var(--text); }
+  .ftwrap { position: relative; display: inline-block; }
+  .ftpop {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 20;
+    width: 260px;
+    margin-top: 4px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+    gap: 4px;
+  }
+  .ftwrap:hover .ftpop, .ftwrap:focus-within .ftpop, .ftpop.open { display: grid; }
+  .charged { color: var(--text); font-weight: 600; }
   .copy { padding: 0 4px; border: 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
   .copy:hover { color: var(--accent); }
   .del { font-size: 12px; }

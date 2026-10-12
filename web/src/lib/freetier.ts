@@ -1,17 +1,15 @@
 // Free tiers per service and cloud, shown behind an info icon on each card.
 //
 // A free tier belongs to the account (or billing account, or tenancy), not to one
-// estimate line, so the calculator does not subtract it on its own. Some providers put
-// the allowance into their price list as a $0 first tier; those prices already include
-// it, and `inPrice` says so. Limits were read from each provider's page on 2026-10-06.
+// estimate line, so totals never subtract it. Where a provider writes the allowance into
+// its price list as a $0 first tier, the pricers charge that tier at the paid rate
+// (`tierPolicy` in prices.ts). Limits were read from each provider's page on 2026-10-06.
 import type { Provider } from './types';
 
 export interface FreeTier {
   /** The allowance, in the provider's units. */
   text: string;
-  /** Whether the price on the card already counts the allowance. */
-  inPrice: 'yes' | 'no' | 'partly';
-  /** What `partly` covers. */
+  /** A note on how the allowance relates to what the card prices. */
   detail?: string;
   src: string;
 }
@@ -32,90 +30,96 @@ export const NEW_ACCOUNT: Partial<Record<Provider, { text: string; src: string }
 
 const TIERS: Record<string, Partial<Record<Provider, FreeTier>>> = {
   cdn: {
-    aws: { text: '1 TB of data out and 10M HTTP or HTTPS requests a month, always free.', inPrice: 'no', src: 'https://aws.amazon.com/cloudfront/pricing/' },
+    aws: { text: '1 TB of data out and 10M HTTP or HTTPS requests a month, always free.', src: 'https://aws.amazon.com/cloudfront/pricing/' },
   },
   vm: {
-    azure: { text: '12 months for new customers: 750 hours each of B1s, B2pts v2 (Arm) and B2ats v2 (AMD) a month.', inPrice: 'no', src: AZ_ACCOUNT },
-    gcp: { text: 'One e2-micro VM a month in us-west1, us-central1 or us-east1.', inPrice: 'no', src: GCP_FREE },
+    azure: { text: '12 months for new customers: 750 hours each of B1s, B2pts v2 (Arm) and B2ats v2 (AMD) a month.', src: AZ_ACCOUNT },
+    gcp: { text: 'One e2-micro VM a month in us-west1, us-central1 or us-east1.', src: GCP_FREE },
     oci: {
       text: 'Two AMD micro VMs (1/8 OCPU, 1 GB). Ampere A1: 1,500 OCPU-hours and 9,000 GB-hours a month, about 2 OCPU and 12 GB.',
-      inPrice: 'partly', detail: 'The Ampere A1 allowance is in the price; the AMD micro VMs are not offered here.', src: OCI_FREE,
+      detail: 'The AMD micro VMs are not offered here.', src: OCI_FREE,
     },
   },
   disk: {
-    gcp: { text: '30 GB-months of pd-standard in us-west1, us-central1 and us-east1.', inPrice: 'no', src: GCP_FREE },
-    oci: { text: '200 GB of boot and block volumes combined.', inPrice: 'no', src: OCI_FREE },
+    gcp: { text: '30 GB-months of pd-standard in us-west1, us-central1 and us-east1.', src: GCP_FREE },
+    oci: { text: '200 GB of boot and block volumes combined.', src: OCI_FREE },
   },
   object: {
     gcp: {
       text: '5 GB-months of regional storage in US regions; 5,000 Class A and 50,000 Class B operations a month.',
-      inPrice: 'partly', detail: 'The operations allowance is in the price; the storage allowance is not.', src: GCP_FREE,
+      src: GCP_FREE,
     },
     oci: {
       text: '20 GB across Standard, Infrequent Access and Archive; 50,000 API requests a month.',
-      inPrice: 'partly', detail: "Oracle's price list makes the first 10 GB of Standard free; the price uses that.", src: OCI_FREE,
+      src: OCI_FREE,
     },
   },
   functions: {
-    azure: { text: '1M executions and 400,000 GB-seconds a month (Consumption plan).', inPrice: 'yes', src: AZ_LIST },
-    aws: { text: '1M requests and 400,000 GB-seconds a month, x86 and Arm.', inPrice: 'no', src: 'https://aws.amazon.com/lambda/pricing/' },
+    azure: { text: '1M executions and 400,000 GB-seconds a month (Consumption plan).', src: AZ_LIST },
+    aws: { text: '1M requests and 400,000 GB-seconds a month, x86 and Arm.', src: 'https://aws.amazon.com/lambda/pricing/' },
     gcp: {
       text: '2M invocations, 400,000 GB-seconds, 200,000 GHz-seconds and 5 GB of egress a month.',
-      inPrice: 'partly', detail: 'The invocation allowance is in the price; compute time is not.', src: GCP_FREE,
+      src: GCP_FREE,
     },
-    oci: { text: '2M invocations and 400,000 GB-seconds a month.', inPrice: 'yes', src: OCI_LIST },
+    oci: { text: '2M invocations and 400,000 GB-seconds a month.', src: OCI_LIST },
   },
   containers: {
     gcp: {
       text: 'Cloud Run, request-based billing: 2M requests, 360,000 GB-seconds and 180,000 vCPU-seconds a month.',
-      inPrice: 'no', detail: 'The card prices instance-based billing, which has no free allowance.', src: GCP_FREE,
+      detail: 'The card prices instance-based billing, which has no free allowance.', src: GCP_FREE,
     },
   },
   k8s: {
-    azure: { text: 'The AKS Free tier has no cluster fee.', inPrice: 'no', detail: 'The card prices the Standard tier, which carries an uptime SLA.', src: AZ_LIST },
-    gcp: { text: 'The cluster fee of one zonal Standard or Autopilot cluster a month. Nodes are charged.', inPrice: 'no', src: GCP_FREE },
+    azure: { text: 'The AKS Free tier has no cluster fee.', detail: 'The card prices the Standard tier, which carries an uptime SLA.', src: AZ_LIST },
+    gcp: { text: 'The cluster fee of one zonal Standard or Autopilot cluster a month. Nodes are charged.', src: GCP_FREE },
   },
   queue: {
-    azure: { text: 'Service Bus Standard includes 13M operations a month.', inPrice: 'yes', src: AZ_LIST },
-    aws: { text: '1M requests a month.', inPrice: 'no', src: 'https://aws.amazon.com/sqs/pricing/' },
-    gcp: { text: '10 GiB of Pub/Sub messages a month.', inPrice: 'yes', src: GCP_FREE },
-    oci: { text: '1M requests a month.', inPrice: 'yes', src: OCI_LIST },
+    aws: { text: '1M requests a month.', src: 'https://aws.amazon.com/sqs/pricing/' },
+    gcp: { text: '10 GiB of Pub/Sub messages a month.', src: GCP_FREE },
+    oci: { text: '1M requests a month.', src: OCI_LIST },
   },
   notify: {
-    azure: { text: '100,000 Event Grid operations a month.', inPrice: 'yes', src: AZ_LIST },
-    gcp: { text: '10 GiB of Pub/Sub messages a month.', inPrice: 'yes', src: GCP_FREE },
-    oci: { text: '1M HTTPS and 1,000 email deliveries a month.', inPrice: 'yes', src: OCI_FREE },
+    aws: { text: '1M publishes, 100,000 HTTP or HTTPS deliveries and 1,000 email deliveries a month.', src: 'https://aws.amazon.com/sns/pricing/' },
+    azure: { text: '100,000 Event Grid operations a month.', src: AZ_LIST },
+    gcp: { text: '10 GiB of Pub/Sub messages a month.', src: GCP_FREE },
+    oci: { text: '1M HTTPS and 1,000 email deliveries a month.', src: OCI_FREE },
   },
   monitoring: {
-    azure: { text: '5 GB of log ingestion a month and 10 metric alert time series.', inPrice: 'yes', src: AZ_LIST },
-    aws: { text: '10 custom metrics, 10 alarms, 5 GB of logs, 3 dashboards and 1M API requests a month.', inPrice: 'no', src: 'https://aws.amazon.com/cloudwatch/pricing/' },
-    gcp: { text: '150 MiB of metrics per billing account and 50 GiB of logs per project a month.', inPrice: 'yes', src: GCP_FREE },
-    oci: { text: '500M ingestion and 1B retrieval data points; 10 GB of logs a month.', inPrice: 'yes', src: OCI_FREE },
+    azure: { text: '5 GB of log ingestion a month and 10 metric alert time series.', src: AZ_LIST },
+    aws: { text: '10 custom metrics, 10 alarms, 5 GB of logs, 3 dashboards and 1M API requests a month.', src: 'https://aws.amazon.com/cloudwatch/pricing/' },
+    gcp: { text: '150 MiB of metrics per billing account and 50 GiB of logs per project a month.', src: GCP_FREE },
+    oci: { text: '500M ingestion and 1B retrieval data points; 10 GB of logs a month.', src: OCI_FREE },
   },
   egress: {
-    azure: { text: '100 GB a month to the internet.', inPrice: 'yes', src: AZ_LIST },
-    aws: { text: '100 GB a month to the internet, shared across all services and regions.', inPrice: 'no', src: 'https://aws.amazon.com/ec2/pricing/on-demand/' },
+    azure: { text: '100 GB a month to the internet.', src: AZ_LIST },
+    aws: { text: '100 GB a month to the internet, shared across all services and regions.', src: 'https://aws.amazon.com/ec2/pricing/on-demand/' },
     gcp: {
       text: '1 GB a month from North America.',
-      inPrice: 'partly', detail: "Some routes in Google's price list start with a free first GiB; the price follows the price list.", src: GCP_FREE,
+      src: GCP_FREE,
     },
-    oci: { text: '10 TB of outbound data a month.', inPrice: 'yes', src: OCI_FREE },
+    oci: { text: '10 TB of outbound data a month.', src: OCI_FREE },
+  },
+  backup: {
+    oci: { text: 'Backups count toward the 20 GB of free Object Storage.', src: OCI_FREE },
   },
   lb: {
-    oci: { text: 'One flexible load balancer at 10 Mbps.', inPrice: 'yes', src: OCI_FREE },
+    oci: { text: 'One flexible load balancer at 10 Mbps.', src: OCI_FREE },
   },
   db: {
-    azure: { text: 'Azure SQL Database: 100,000 vCore-seconds of serverless use and 32 GB of storage a month.', inPrice: 'no', detail: 'The card prices provisioned General Purpose compute.', src: AZ_ACCOUNT },
-    oci: { text: 'Two Autonomous Databases (1 OCPU, 20 GB each) and one single-node MySQL HeatWave with 50 GB.', inPrice: 'no', src: OCI_FREE },
+    azure: { text: 'Azure SQL Database: 100,000 vCore-seconds of serverless use and 32 GB of storage a month.', detail: 'The card prices provisioned General Purpose compute.', src: AZ_ACCOUNT },
+    oci: { text: 'Two Autonomous Databases (1 OCPU, 20 GB each) and one single-node MySQL HeatWave with 50 GB.', src: OCI_FREE },
   },
   waf: {
-    oci: { text: 'The first WAF policy and 10M requests a month.', inPrice: 'yes', src: OCI_LIST },
+    oci: { text: 'The first WAF policy and 10M requests a month.', src: OCI_LIST },
   },
   apigw: {
-    azure: { text: '1M calls a month on the Consumption tier.', inPrice: 'yes', src: AZ_LIST },
-    gcp: { text: 'The first 2M API calls a month.', inPrice: 'yes', src: 'https://cloud.google.com/api-gateway/pricing' },
+    azure: { text: '1M calls a month on the Consumption tier.', src: AZ_LIST },
+    gcp: { text: 'The first 2M API calls a month.', src: 'https://cloud.google.com/api-gateway/pricing' },
   },
 };
+
+/** Said with every allowance: the totals never take it off. */
+export const CHARGED = 'The total charges this in full, so the real bill can come out lower.';
 
 export function freeTier(svc: string, provider: Provider): FreeTier | undefined {
   return TIERS[svc]?.[provider];
@@ -125,6 +129,5 @@ export function freeTier(svc: string, provider: Provider): FreeTier | undefined 
 export function freeTierText(svc: string, provider: Provider): string {
   const t = freeTier(svc, provider);
   if (!t) return '';
-  const inPrice = t.inPrice === 'yes' ? 'Already in this price.' : t.inPrice === 'no' ? 'This price leaves it out.' : t.detail ?? '';
-  return `Free tier: ${t.text} ${t.inPrice === 'no' && t.detail ? `${t.detail} ` : ''}${inPrice}`.trim();
+  return `Free tier: ${t.text} ${t.detail ? `${t.detail} ` : ''}${CHARGED}`;
 }
