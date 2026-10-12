@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, prices, newTab, importAwsTemplate } from '../lib/store.svelte';
+  import { app, prices, newTab, importAwsFile } from '../lib/store.svelte';
   import { buildReport, dateOnly } from '../lib/report';
   import { download, fillAwsTemplate, saveEstimate } from '../lib/api';
   import { ec2Rows } from '../lib/awsexport';
@@ -55,11 +55,12 @@
 
   function importFile(file: File) {
     imported = null;
-    run('Reading the template…', async () => {
-      const res = await importAwsTemplate(await file.arrayBuffer());
+    run('Reading the file…', async () => {
+      const res = await importAwsFile(file.name, await file.arrayBuffer());
+      const vms = res.instances ? ` (${res.instances} instance${res.instances === 1 ? '' : 's'})` : '';
       imported = {
         text: res.rows
-          ? `Imported ${res.rows} row${res.rows === 1 ? '' : 's'} (${res.instances} instance${res.instances === 1 ? '' : 's'}) into the AWS site. Cards marked ⚑ carry a template setting this site does not price.`
+          ? `Imported ${res.rows} row${res.rows === 1 ? '' : 's'}${vms} of the ${res.kind} into the AWS site. Cards marked ⚑ carry a note to check.`
           : 'No rows were imported.',
         skipped: res.skipped,
       };

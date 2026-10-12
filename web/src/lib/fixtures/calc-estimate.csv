@@ -1,0 +1,27 @@
+﻿Estimate summary
+Upfront cost,Monthly cost,Total 12 months cost,Currency
+0,6665.879999999999,79990.56,USD
+,,* Includes upfront cost
+
+
+Detailed Estimate
+Group hierarchy,Region,Description,Service,Upfront,Monthly,First 12 months total,Currency,Status,Configuration summary
+My Estimate,Asia Pacific (Jakarta),,VPN Connection,0,266.5,3198.00,USD,,"Working days per month (22), Number of Site-to-Site VPN Connections (1), Number of subnet associations (2)"
+My Estimate,Asia Pacific (Jakarta),,Network Access Analyzer,0,400,4800.00,USD,,"Number of network assessments per month (100000), Number of ENIs (elastic network interfaces) (2)"
+My Estimate,Asia Pacific (Jakarta),,Reachability Analyzer,0,1000,12000.00,USD,,Number of connectivity analysis per month (10000)
+My Estimate,Asia Pacific (Jakarta),,Traffic Mirroring,0,131.4,1576.80,USD,,Number of traffic mirroring sessions (10)
+My Estimate,Asia Pacific (Jakarta),,Public IPv4 Address,0,54.75,657.00,USD,,"Number of In-use public IPv4 addresses (5), Number of Idle public IPv4 addresses (10)"
+My Estimate,Asia Pacific (Jakarta),,IPAM,0,0.39,4.68,USD,,Number of active IP addresses (2)
+My Estimate,Asia Pacific (Jakarta),,Data Transfer,0,1556.48,18677.76,USD,,"DT Inbound: Internet (20 TB per month), DT Outbound: Internet (10 TB per month), DT Intra-Region: (10 TB per month), Data transfer cost (1556.48)"
+My Estimate,Asia Pacific (Jakarta),,VPC Route Server,0,715.4,8584.80,USD,,Number of Route Server endpoints (1)
+My Estimate,Asia Pacific (Jakarta),,Network Address Translation (NAT) Gateway,0,773.49,9281.88,USD,,"Number of Regional NAT Gateways (5), Number of Availability Zones Regional NAT Gateways is active in (3), Number of NAT Gateways (2)"
+My Estimate,Asia Pacific (Jakarta),,Transit Gateway,0,1030.02,12360.24,USD,,"Number of Transit Gateway attachments (20), Number of Multicast Receivers (1)"
+My Estimate,Asia Pacific (Jakarta),,AWS PrivateLink,0,38.16,457.92,USD,,Number of VPC Interface endpoints per AWS region (2)
+My Estimate,Asia Pacific (Jakarta),,Gateway Load Balancer,0,74.46,893.52,USD,,"Number of Availability Zones that Gateway Load Balancer is deployed to (1), Number of Gateway Load Balancer Endpoints (1), Total processed bytes (10 GB per hour), Average number of new connections/flows (10 per second)"
+My Estimate,Asia Pacific (Jakarta),,Cloud WAN,0,562.5,6750.00,USD,,"Number of Attachments (1), Number of Transit Gateway Peering Connections (2)"
+My Estimate,Asia Pacific (Jakarta),,Amazon EC2 ,0,62.326765,747.92,USD,,"Tenancy (Shared Instances), Operating system (Linux), Workload (Daily, (Workload days: Monday, Tuesday, Wednesday, Thursday, Friday, Baseline: 1, Peak: 2, Duration of peak: 8 Hr 30 Min)), Advance EC2 instance (t4g.nano), Pricing strategy (Compute Savings Plans 3yr  No Upfront), Enable monitoring (enabled), EBS Storage amount (200 GB), DT Inbound: Not selected (0 TB per month), DT Outbound: Not selected (0 TB per month), DT Intra-Region: (0 TB per month)"
+
+
+
+Acknowledgement
+"* AWS Pricing Calculator provides only an estimate of your AWS fees and doesn't include any taxes that might apply. Your actual fees depend on a variety of factors, including your actual usage of AWS services."

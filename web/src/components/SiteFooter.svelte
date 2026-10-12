@@ -4,6 +4,7 @@
 
 <footer>
   <nav aria-label="Site">
+    <a href="/changelog">Changelog</a>
     <a href="/privacy">Privacy</a>
     <a href="/terms">Terms</a>
     <a href="/legal">Trademarks and credits</a>

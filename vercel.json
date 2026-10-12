@@ -12,7 +12,8 @@
     { "source": "/app", "destination": "/index.html" },
     { "source": "/privacy", "destination": "/index.html" },
     { "source": "/terms", "destination": "/index.html" },
-    { "source": "/legal", "destination": "/index.html" }
+    { "source": "/legal", "destination": "/index.html" },
+    { "source": "/changelog", "destination": "/index.html" }
   ],
   "headers": [
     {

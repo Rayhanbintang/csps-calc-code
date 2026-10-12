@@ -36,7 +36,7 @@
     {
       img: 'board',
       title: 'One board, four clouds',
-      text: 'Lay out AWS, Google Cloud, Oracle Cloud and Azure sites side by side. Each region gets its own box with a running total, and the summary adds them up.',
+      text: 'Lay out AWS, Google Cloud, Oracle Cloud and Azure sites side by side. Each region gets its own box with a running total, and the summary compares the clouds.',
     },
     {
       img: 'nesting',
@@ -46,17 +46,22 @@
     {
       img: 'switch',
       title: 'Switch clouds in one click',
-      text: 'Convert a whole site to another provider. The calculator picks the nearest region and a matching machine size, then prices every card again.',
+      text: 'Convert a whole site to another provider. The calculator picks the nearest region and a matching machine size, prices every card again and flags what to check.',
     },
     {
       img: 'commit',
       title: 'Commitments next to on-demand',
-      text: 'Compare on-demand with Reserved Instances, Savings Plans and committed-use discounts on the same card. Upfront payments show apart from the monthly bill.',
+      text: 'Compare on-demand with Reserved Instances, Savings Plans and committed-use discounts for one card, side by side. Upfront payments show apart from the monthly bill.',
     },
     {
-      img: 'import',
-      title: 'Bring in your AWS estimate',
-      text: "Import the EC2 bulk upload template from the AWS Pricing Calculator. Each row lands as a VM with its disk, grouped the way you grouped it.",
+      img: 'advise',
+      title: 'An AI review of your design',
+      text: 'A language model reads the tab and points out risks and savings, naming the cards. It gives advice only and never changes the estimate.',
+    },
+    {
+      img: 'aws',
+      title: 'Bring in your AWS work',
+      text: "Import the AWS Pricing Calculator's EC2 and EBS bulk upload templates or an estimate's CSV export, and fill AWS's EC2 template from your estimate.",
     },
     {
       img: 'share',
@@ -64,6 +69,24 @@
       text: "Send a read-only link or download Excel and PDF. A shared link keeps the numbers you saved and shows today's price beside them.",
     },
   ];
+
+  // Carousel: a scroll-snap track, so a swipe on a phone moves one slide. The buttons,
+  // dots and arrow keys scroll the same track.
+  let track = $state<HTMLDivElement>();
+  let at = $state(0);
+  function go(i: number) {
+    if (!track) return;
+    const n = FEATURES.length;
+    const to = (i + n) % n;
+    track.scrollTo({ left: to * track.clientWidth, behavior: 'smooth' });
+  }
+  function onScroll() {
+    if (track) at = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+  }
+  function onKey(e: KeyboardEvent) {
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(at + 1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(at - 1); }
+  }
 </script>
 
 <div class="page">
@@ -101,14 +124,29 @@
       </p>
     </section>
 
-    <section class="features">
-      {#each FEATURES as f}
-        <article>
-          <img src={`/landing/${f.img}.webp`} alt={f.title} loading="lazy" width="1440" height="900" />
-          <h3>{f.title}</h3>
-          <p>{f.text}</p>
-        </article>
-      {/each}
+    <section class="features" aria-roledescription="carousel" aria-label="What the calculator does">
+      <div class="frame">
+        <!-- A focusable scroll region that takes arrow keys is the carousel pattern. -->
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+        <div class="track" role="region" aria-label="Feature slides, use the arrow keys" bind:this={track} onscroll={onScroll} onkeydown={onKey} tabindex="0">
+          {#each FEATURES as f, i (f.img)}
+            <figure class="slide" aria-roledescription="slide" aria-label={`${i + 1} of ${FEATURES.length}: ${f.title}`}>
+              <img src={`/landing/${f.img}.webp`} alt={f.title} loading={i === 0 ? 'eager' : 'lazy'} width="1600" height="1000" />
+              <figcaption>
+                <h3>{f.title}</h3>
+                <p>{f.text}</p>
+              </figcaption>
+            </figure>
+          {/each}
+        </div>
+        <button class="nav prev" aria-label="Previous feature" onclick={() => go(at - 1)}>‹</button>
+        <button class="nav next" aria-label="Next feature" onclick={() => go(at + 1)}>›</button>
+      </div>
+      <div class="dots" role="tablist" aria-label="Choose a feature">
+        {#each FEATURES as f, i (f.img)}
+          <button role="tab" aria-selected={at === i} aria-label={f.title} class:on={at === i} onclick={() => go(i)}></button>
+        {/each}
+      </div>
     </section>
   </main>
   <SiteFooter />
@@ -116,7 +154,7 @@
 
 <style>
   .page { min-height: 100vh; display: flex; flex-direction: column; }
-  main { flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+  main { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 16px; }
   .hero { text-align: center; padding: 72px 0 40px; }
   h1 { font-size: clamp(30px, 5.5vw, 52px); line-height: 1.1; margin: 0 0 16px; letter-spacing: -0.02em; }
   .s {
@@ -152,32 +190,47 @@
   .why { max-width: 720px; margin: 24px auto 40px; text-align: center; }
   .why h2 { font-size: 22px; margin: 0 0 8px; }
   .why p { color: var(--muted); margin: 0; font-size: 15px; }
-  .features {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 28px;
-    padding-bottom: 56px;
-  }
-  article {
-    background: var(--panel);
-    border: 1px solid var(--line);
+  .features { padding-bottom: 56px; }
+  .frame { position: relative; }
+  .track {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
     border-radius: var(--radius);
-    padding: 12px 12px 18px;
+    border: 1px solid var(--line);
+    background: var(--panel);
     box-shadow: var(--shadow);
   }
-  img {
-    display: block;
-    width: 100%;
-    height: auto;
-    border-radius: 6px;
-    border: 1px solid var(--line);
-    background: var(--panel-2);
+  .track::-webkit-scrollbar { display: none; }
+  .track:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .slide { flex: 0 0 100%; scroll-snap-align: start; margin: 0; }
+  img { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  figcaption { padding: 14px 18px 18px; }
+  h3 { margin: 0 0 4px; font-size: 18px; }
+  figcaption p { margin: 0; color: var(--muted); max-width: 820px; }
+  .nav {
+    position: absolute;
+    top: 40%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    font-size: 26px;
+    line-height: 1;
+    background: var(--panel);
+    box-shadow: var(--shadow);
   }
-  h3 { margin: 14px 4px 4px; font-size: 17px; }
-  article p { margin: 0 4px; color: var(--muted); }
+  .prev { left: -14px; }
+  .next { right: -14px; }
+  .dots { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
+  .dots button { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 1px solid var(--field-line); background: transparent; }
+  .dots button.on { background: var(--accent); border-color: var(--accent); }
   @media (max-width: 760px) {
     .hero { padding-top: 40px; }
-    .features { grid-template-columns: 1fr; }
+    .prev { left: 4px; }
+    .next { right: 4px; }
+    .nav { width: 36px; height: 36px; font-size: 22px; }
     .or { display: none; }
   }
 </style>

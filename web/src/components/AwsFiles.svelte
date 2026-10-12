@@ -25,17 +25,18 @@
       </div>
 
       <section>
-        <h3>Import the EC2 bulk upload template</h3>
+        <h3>Import from the AWS Pricing Calculator</h3>
         <p class="small muted">
-          The AWS Pricing Calculator offers this .xlsx file in its Amazon EC2 bulk upload. Each row becomes a VM card,
-          with its EBS disk and snapshots inside it. The file stays in this browser.
+          Three kinds of file: the EC2 or EBS bulk upload template (.xlsx), or an estimate exported as CSV. Template
+          rows become VM and disk cards. CSV rows this calculator prices become cards; other services keep AWS's own
+          figure on a flagged card. The file stays in this browser.
         </p>
         <p class="small links">
           <a href="https://calculator.aws/" target="_blank" rel="noopener">Open the AWS Pricing Calculator</a>
           <a href="/templates/csps-ec2-sample.xlsx" download>Download a sample file</a>
         </p>
         <button class="primary" onclick={() => importer?.click()}>Choose a file…</button>
-        <input bind:this={importer} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onchange={(e) => take(e, onimport)} />
+        <input bind:this={importer} type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden onchange={(e) => take(e, onimport)} />
       </section>
 
       <section>

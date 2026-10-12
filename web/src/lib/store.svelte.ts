@@ -10,7 +10,8 @@ import { supportFee } from './support';
 import { ADDONS, attachSpec, canHold, contains, findNode, pricedItem, walk } from './tree';
 import type { Node } from './tree';
 import { readSheet } from './xlsxread';
-import { SHEET, parseTemplate } from './awsimport';
+import { SHEET, parseEbsTemplate, parseTemplate, templateKind } from './awsimport';
+import { parseCalcCsv } from './calcimport';
 import type { ImportResult } from './awsimport';
 import { syncVmSize } from './catalog/vm';
 import { awsFind, awsRate } from './catalog/util';
@@ -528,16 +529,29 @@ export function tabName(t: Tab): string {
 
 /** Adds the rows of the template to the first AWS site of the tab on screen (a new
  *  AWS site when there is none). Returns what was imported and what was skipped. */
-export async function importAwsTemplate(file: ArrayBuffer): Promise<ImportResult> {
-  const rows = await readSheet(file, SHEET);
-  const regions = (app.manifest?.providers.aws?.regions ?? []).map((r) => r.code);
-  const res = parseTemplate(rows, regions);
+/** Imports an AWS file into the first AWS site of the tab: the EC2 or EBS bulk upload
+ *  template (.xlsx) or a calculator.aws estimate export (.csv). */
+export async function importAwsFile(name: string, data: ArrayBuffer): Promise<ImportResult & { kind: string }> {
+  const regions = app.manifest?.providers.aws?.regions ?? [];
+  if (/\.csv$/i.test(name)) {
+    const res = parseCalcCsv(new TextDecoder().decode(data), regions);
+    return { ...(await placeImport(res)), kind: 'calculator.aws estimate' };
+  }
+  const rows = await readSheet(data, SHEET);
+  const kind = templateKind(rows);
+  const codes = regions.map((r) => r.code);
+  if (kind === 'hosts') throw new Error('This is the EC2 Dedicated Hosts template. This calculator does not price Dedicated Hosts.');
+  if (kind === 'ebs') return { ...(await placeImport(parseEbsTemplate(rows, codes))), kind: 'EBS template' };
+  return { ...(await placeImport(parseTemplate(rows, codes))), kind: 'EC2 template' };
+}
+
+async function placeImport(res: ImportResult): Promise<ImportResult> {
   if (!res.rows) return res;
   // Fill vCPU and memory from the instance type, so a later move to another cloud matches by size.
   await Promise.all(
     res.boxes.flatMap((b) =>
       b.items.map(async (vm) => {
-        vm.spec = await syncVmSize('aws', ctxFor(app.manifest, 'aws', b.region), vm.spec);
+        if (vm.svc === 'vm') vm.spec = await syncVmSize('aws', ctxFor(app.manifest, 'aws', b.region), vm.spec);
       }),
     ),
   );

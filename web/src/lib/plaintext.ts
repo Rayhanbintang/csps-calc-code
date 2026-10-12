@@ -16,7 +16,8 @@ function runs(s: string): Run[] {
   for (const p of parts) {
     if (!p) continue;
     const m = /^\*\*([^*]+)\*\*$/.exec(p);
-    out.push(m ? { text: m[1], bold: true } : { text: p, bold: false });
+    // Single-asterisk italics and `code` marks show as plain text.
+    out.push(m ? { text: m[1], bold: true } : { text: p.replace(/\*([^*\s][^*]*)\*/g, '$1').replace(/`([^`]+)`/g, '$1'), bold: false });
   }
   return out;
 }

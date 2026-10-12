@@ -189,3 +189,68 @@ export function parseTemplate(rows: string[][], regions: string[]): ImportResult
   }
   return { boxes: [...boxes.values()], rows: count, instances, skipped };
 }
+
+/** Which AWS bulk upload template the Inputs sheet is, by its headers. */
+export function templateKind(rows: string[][]): 'ec2' | 'ebs' | 'hosts' | undefined {
+  const head = rows.slice(0, 10).flat().map((c) => (c ?? '').trim());
+  const has = (re: RegExp) => head.some((c) => re.test(c));
+  if (has(/^number of hosts/i)) return 'hosts';
+  if (has(COLS.type) && has(COLS.region)) return 'ec2';
+  if (has(/^number\s+of volumes/i) && has(COLS.storage)) return 'ebs';
+  return undefined;
+}
+
+/** The EBS template: one disk card per row (the count is the number of volumes), and a
+ *  backup card for its snapshots. Disks sit at region-box level; move them into VMs. */
+export function parseEbsTemplate(rows: string[][], regions: string[]): ImportResult {
+  const headerAt = rows.findIndex((r) => r.some((c) => /^number\s+of volumes/i.test(c?.trim() ?? '')));
+  const head = rows[headerAt].map((c) => (c ?? '').trim());
+  const at = (re: RegExp) => head.findIndex((c) => re.test(c));
+  const col = {
+    group: at(COLS.group), description: at(COLS.description), region: at(COLS.region), storage: at(COLS.storage),
+    hours: at(/^average duration/i), count: at(/^number\s+of volumes/i), gb: at(/^storage amount/i),
+    iops: at(COLS.iops), mbps: at(COLS.mbps), snapFreq: at(COLS.snapFreq), snapGb: at(COLS.snapGb),
+  };
+  const boxes = new Map<string, ImportBox>();
+  const skipped: string[] = [];
+  let count = 0;
+  for (let r = headerAt + 1; r < rows.length; r++) {
+    const row = rows[r] ?? [];
+    const get = (i: number) => (i < 0 ? '' : (row[i] ?? '').trim());
+    const region = get(col.region), storage = get(col.storage);
+    if (!region && !storage) continue;
+    const line = `Row ${r + 1}`;
+    if (!regions.includes(region)) { skipped.push(`${line}: ${region || 'no region'} is not in the AWS price list (Local Zones and Wavelength zones are not covered).`); continue; }
+    const vol = volume(storage);
+    if (!vol) { skipped.push(`${line}: storage type "${storage}" is not supported.`); continue; }
+    const n = number(get(col.count)) ?? 1;
+    const gb = number(get(col.gb));
+    if (!gb) { skipped.push(`${line}: no storage amount per volume.`); continue; }
+    const disk = newItem('disk');
+    disk.qty = Math.max(1, Math.round(n));
+    disk.name = get(col.description) || `EBS ${vol[1]}`;
+    const spec: Spec = { ...disk.spec, gb, type: vol[0], 'aws.volume': vol[1] };
+    const iops = number(get(col.iops)), mbps = number(get(col.mbps));
+    if (iops !== undefined) spec.iops = iops;
+    if (mbps !== undefined) spec.mbps = mbps;
+    disk.spec = spec;
+    const hours = number(get(col.hours));
+    if (hours !== undefined && hours < HOURS_PER_MONTH) disk.check = `The template runs these volumes ${hours} hours a month; this card prices the whole month.`;
+    const items: Item[] = [disk];
+    const snap = get(col.snapFreq), each = number(get(col.snapGb)), perMonth = SNAPS[snap.toLowerCase()];
+    if (perMonth && each !== undefined) {
+      const b = newItem('backup');
+      b.qty = disk.qty;
+      b.name = `${disk.name} snapshots`;
+      b.spec = { ...b.spec, what: 'vm', gb: Math.round(gb + each * (perMonth - 1)) };
+      b.check = `From the template: ${snap.toLowerCase()} snapshots of ${each} GB per volume, kept one month (a ${gb} GB first copy plus ${perMonth - 1} × ${each} GB).`;
+      items.push(b);
+    }
+    const group = get(col.group);
+    const key = `${region}\u0000${group}`;
+    if (!boxes.has(key)) boxes.set(key, { region, group, items: [] });
+    boxes.get(key)!.items.push(...items);
+    count++;
+  }
+  return { boxes: [...boxes.values()], rows: count, instances: 0, skipped };
+}

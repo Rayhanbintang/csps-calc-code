@@ -10,6 +10,8 @@
   {#await import('./components/SharedView.svelte') then V}<V.default {slug} />{/await}
 {:else if path === '/app'}
   {#await import('./components/Editor.svelte') then V}<V.default />{/await}
+{:else if path === '/changelog'}
+  {#await import('./components/Changelog.svelte') then V}<V.default />{/await}
 {:else if legal}
   {#await import('./components/Legal.svelte') then V}<V.default page={legal} />{/await}
 {:else}
