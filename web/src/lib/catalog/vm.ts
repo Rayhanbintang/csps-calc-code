@@ -356,6 +356,12 @@ async function ociVmFields(): Promise<Field[]> {
 async function ociVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
   const no = awsOnly(item.spec, 'OCI');
   if (no) return unavailable(no);
+  // OCI sells no licence-included RHEL, SUSE, Ubuntu Pro or SQL Server Web: only your own.
+  if (!byol(item.spec)) {
+    const name = ({ rhel: 'RHEL', suse: 'SUSE', 'ubuntu-pro': 'Ubuntu Pro' } as Record<string, string>)[str(item.spec, 'os')];
+    if (name) return unavailable(`OCI sells no licence-included ${name}. Set Licence to "Bring your own".`);
+    if (str(item.spec, 'sw') === 'sql-web') return unavailable('OCI sells no SQL Server Web licence. Set Licence to "Bring your own".');
+  }
   const rows: OciRow[] = await oci.all();
   const arch = str(item.spec, 'arch', 'x86');
   const shape = ociShapes[str(item.spec, 'oci.shape')] ?? ociShapes[arch === 'arm' ? 'VM.Standard.A1.Flex' : 'VM.Standard.E5.Flex'];
@@ -383,8 +389,7 @@ async function ociVmPrice(ctx: Ctx, item: Item): Promise<Priced> {
     lines.push(line('Windows Server licence', ocpuHours, 'OCPU-hours', must(ociRate(ociPart(rows, 'B88318')), 'Windows licence')));
   }
   if (sql && !byol(item.spec)) lines.push(line(`SQL Server ${sql[1]} licence (marketplace image)`, ocpuHours, 'OCPU-hours', must(ociRate(ociPart(rows, sql[0])), `SQL Server ${sql[1]} licence`)));
-  if (os === 'rhel' || os === 'suse' || os === 'ubuntu-pro') notes.push('OCI has no licence-included price for this OS; add the licence as a custom line if needed.');
-  if (sw === 'sql-web') notes.push('OCI sells no SQL Server Web licence; add it as a custom line.');
+  if (os === 'rhel' || os === 'suse' || os === 'ubuntu-pro' || sw === 'sql-web') notes.push('Your own licence: no licence charge on this card.');
   if (mem > o * 64) notes.push(`${shape.name} allows at most 64 GB per OCPU; raise the vCPU count.`);
   return priced(lines, { sku: `${shape.name} · ${o} OCPU · ${mem} GB`, notes });
 }

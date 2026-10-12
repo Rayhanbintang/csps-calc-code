@@ -305,3 +305,11 @@ describe.skipIf(!have)('nothing a cloud does not sell gets a price', () => {
     expect(p.sku).toBe('Container Instances on A1 Flex');
   });
 });
+
+describe.skipIf(!have)('OCI licences', () => {
+  it('refuses licence-included RHEL and SQL Server Web, prices them with your own licence', async () => {
+    expect((await price('oci', 'ap-singapore-1', item('vm', { os: 'rhel' }))).unavailable).toMatch(/no licence-included RHEL/);
+    expect((await price('oci', 'ap-singapore-1', item('vm', { os: 'windows', sw: 'sql-web' }))).unavailable).toMatch(/no SQL Server Web/);
+    expect((await price('oci', 'ap-singapore-1', item('vm', { os: 'rhel', licence: 'byol' }))).unavailable).toBeUndefined();
+  });
+});
