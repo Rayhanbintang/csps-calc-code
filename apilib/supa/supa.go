@@ -5,10 +5,13 @@ package supa
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -66,13 +69,37 @@ func do(ctx context.Context, method, path string, body any) ([]byte, error) {
 			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(out, &pg)
-		// P0001 is a RAISE EXCEPTION from save_estimate: a limit the visitor hit.
+		// P0001 is a RAISE EXCEPTION from save_estimate or advise_allow: a limit the visitor hit.
 		if pg.Code == "P0001" && pg.Message != "" {
 			return nil, UserError{pg.Message}
 		}
 		return nil, fmt.Errorf("supabase %s %s: HTTP %d %s", method, path, resp.StatusCode, pg.Code)
 	}
 	return out, nil
+}
+
+// IPHash identifies a network for the rate limits without storing the address itself.
+func IPHash(r *http.Request) string {
+	ip := r.Header.Get("X-Real-Ip")
+	if ip == "" {
+		ip = strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	}
+	if ip == "" {
+		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
+	}
+	// The salt keeps the hashes from being reversed by hashing every IPv4 address.
+	salt := os.Getenv("IP_HASH_SALT")
+	if salt == "" {
+		salt = os.Getenv("SUPABASE_SECRET_KEY")
+	}
+	sum := sha256.Sum256([]byte(salt + "|" + ip))
+	return hex.EncodeToString(sum[:16])
+}
+
+// AllowAdvice counts one AI review, or returns a UserError when a limit is reached.
+func AllowAdvice(ctx context.Context, ipHash string) error {
+	_, err := do(ctx, http.MethodPost, "/rpc/advise_allow", map[string]any{"p_ip_hash": ipHash})
+	return err
 }
 
 // Save stores one estimate through the save_estimate function.

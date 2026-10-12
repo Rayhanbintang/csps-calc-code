@@ -16,6 +16,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/estimates", handler.Estimates)
 	mux.HandleFunc("/api/export", handler.Export)
+	mux.HandleFunc("/api/advise", handler.Advise)
 	log.Println("api on :8787")
 	log.Fatal(http.ListenAndServe("127.0.0.1:8787", mux))
 }

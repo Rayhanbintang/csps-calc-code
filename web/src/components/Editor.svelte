@@ -8,6 +8,7 @@
   import Palette from './Palette.svelte';
   import Canvas from './Canvas.svelte';
   import Review from './Review.svelte';
+  import Advisor from './Advisor.svelte';
   import Inspector from './Inspector.svelte';
   import Summary from './Summary.svelte';
   import Reminders from './Reminders.svelte';
@@ -90,7 +91,7 @@
     try { localStorage.setItem(PANEL_KEY, on ? 'open' : 'closed'); } catch { /* ignore */ }
   }
   // The review table carries its own totals per site, so the totals drawer stays shut there.
-  const showPanel = $derived(selectedExists || (panelOpen && app.view !== 'review'));
+  const showPanel = $derived(app.view !== 'advise' && (selectedExists || (panelOpen && app.view === 'canvas')));
   let asideW = $state(0);
   $effect(() => {
     view.reserve = showPanel ? asideW + 16 : 0;
@@ -148,14 +149,17 @@
       <div class="tabs" role="tablist" aria-label="View">
         <button role="tab" aria-selected={app.view === 'canvas'} class:on={app.view === 'canvas'} onclick={() => (app.view = 'canvas')}>Canvas</button>
         <button role="tab" aria-selected={app.view === 'review'} class:on={app.view === 'review'} onclick={() => (app.view = 'review')}>Review table</button>
+        <button role="tab" aria-selected={app.view === 'advise'} class:on={app.view === 'advise'} onclick={() => (app.view = 'advise')}>AI review</button>
         <span class="status small muted" aria-live="polite">{app.busy > 0 ? 'Pricing…' : ''}</span>
       </div>
       <Reminders />
       <div class="stage" class:review={app.view === 'review'}>
         {#if app.view === 'canvas'}
           <Canvas />
-        {:else}
+        {:else if app.view === 'review'}
           <Review />
+        {:else}
+          <Advisor />
         {/if}
         {#if showPanel}
           <aside class:sel={selectedExists} bind:offsetWidth={asideW} transition:fly={{ x: 40, duration: 160 }}>
@@ -166,7 +170,7 @@
               <Summary />
             {/if}
           </aside>
-        {:else if app.view !== 'review'}
+        {:else if app.view === 'canvas'}
           <button class="peek" onclick={() => setPanel(true)} title="Show the estimate totals">Totals</button>
         {/if}
       </div>

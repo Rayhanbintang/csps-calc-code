@@ -49,6 +49,16 @@
             <td>Not kept</td>
           </tr>
           <tr>
+            <td>A summary of the tab you ask the AI review about: card names, sizes, regions and prices, plus your follow-up questions</td>
+            <td>Sent to <a href="https://groq.com/privacy-policy/" target="_blank" rel="noopener">Groq</a>, which runs the model. Groq's services agreement says it does not train models on this data. The site keeps none of it.</td>
+            <td>Set by Groq</td>
+          </tr>
+          <tr>
+            <td>A salted hash of your IP address and the time of each AI review. The site uses it to cap reviews at 10 an hour per visitor.</td>
+            <td>The Supabase database</td>
+            <td>Two days</td>
+          </tr>
+          <tr>
             <td>Request logs (IP address, page, time, browser)</td>
             <td>Vercel, the hosting provider, under <a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noopener">Vercel's privacy policy</a></td>
             <td>Set by Vercel</td>
@@ -74,6 +84,7 @@
         <li>The figures use public list prices in USD, before tax. They leave out discounts you negotiate with a provider.</li>
         <li>Totals don't subtract free-tier allowances. The ⓘ on a card shows the allowance.</li>
         <li>Price lists change and the calculator can get a figure wrong. Check the price with the provider before you buy, sign or quote.</li>
+        <li>The AI review comes from a language model and can be wrong. It is for people aged 18 and over.</li>
         <li>The site comes as is, without warranty. Rayhan accepts no liability for losses that come from using its figures.</li>
       </ul>
       <h2>Share links</h2>

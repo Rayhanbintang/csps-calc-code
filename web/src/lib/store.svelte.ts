@@ -110,7 +110,7 @@ export const app = $state({
   selected: null as string | null,
   /** Items ticked for bulk moves. */
   ticked: [] as string[],
-  view: 'canvas' as 'canvas' | 'review',
+  view: 'canvas' as 'canvas' | 'review' | 'advise',
   busy: 0,
   /** The copy dialog: what is being copied. */
   copy: null as { kind: 'item' | 'box' | 'site'; id: string } | null,

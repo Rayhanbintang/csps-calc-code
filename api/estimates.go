@@ -4,16 +4,12 @@ package handler
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"math/big"
-	"net"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 
@@ -79,7 +75,7 @@ func save(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stored, _ := json.Marshal(map[string]any{"estimate": body.Estimate, "report": body.Report})
-	if err := supa.Save(r.Context(), slug, stored, ipHash(r)); err != nil {
+	if err := supa.Save(r.Context(), slug, stored, supa.IPHash(r)); err != nil {
 		var ue supa.UserError
 		if errors.As(err, &ue) {
 			fail(w, http.StatusTooManyRequests, ue.Msg)
@@ -137,24 +133,6 @@ func newSlug() (string, error) {
 		b[i] = alphabet[n.Int64()]
 	}
 	return string(b), nil
-}
-
-// ipHash identifies a network for the save limit without storing the address itself.
-func ipHash(r *http.Request) string {
-	ip := r.Header.Get("X-Real-Ip")
-	if ip == "" {
-		ip = strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
-	}
-	if ip == "" {
-		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
-	}
-	// The salt keeps the hashes from being reversed by hashing every IPv4 address.
-	salt := os.Getenv("IP_HASH_SALT")
-	if salt == "" {
-		salt = os.Getenv("SUPABASE_SECRET_KEY")
-	}
-	sum := sha256.Sum256([]byte(salt + "|" + ip))
-	return hex.EncodeToString(sum[:16])
 }
 
 func fail(w http.ResponseWriter, code int, msg string) {

@@ -68,3 +68,19 @@ function save(blob: Blob, name: string): void {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
+
+export interface Turn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** Asks the AI reviewer about the estimate. It answers in text; nothing changes. */
+export async function askReviewer(report: Report, question: string, history: Turn[]): Promise<string> {
+  const res = await fetch('/api/advise', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ report, question, history }),
+  });
+  if (!res.ok) await fail(res);
+  return (await res.json()).answer as string;
+}
