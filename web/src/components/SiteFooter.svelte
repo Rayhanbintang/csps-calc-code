@@ -12,8 +12,7 @@
     <a href={REPO} target="_blank" rel="noopener">Source code</a>
   </nav>
   <p class="small muted">
-    Made by Rayhan as a free community project. Not affiliated with or endorsed by Amazon Web Services,
-    Google Cloud, Oracle, Microsoft or Red Hat.
+    Not affiliated with or endorsed by Amazon Web Services, Google Cloud, Oracle, Microsoft or Red Hat.
   </p>
 </footer>
 

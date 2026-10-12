@@ -48,7 +48,7 @@
     {
       img: 'switch.webp', chip: 'Cloud switch',
       title: 'Move a site to another cloud',
-      text: 'Pick another provider for a site. The calculator picks the nearest region and a matching machine size, prices every card again and flags each card to check. This animation leaves the prices out: it shows the matching.',
+      text: 'Pick another provider for a site. The calculator picks the nearest region and a matching machine size, prices every card again and flags each card to check.',
     },
     {
       img: 'commit.webp', chip: 'Commitments',
@@ -61,19 +61,14 @@
       text: 'Copy a card, a region box or a whole site, as it is or scaled. A recovery site at 50% keeps the machine types and halves the counts and storage.',
     },
     {
-      img: 'honest.webp', chip: 'What each cloud sells',
-      title: 'Only what the cloud sells',
-      text: 'One real gap on each cloud. A card that asks for something its cloud does not sell shows the reason instead of a stand-in price, and the option is greyed out in the card settings.',
-    },
-    {
       img: 'aws.webp', chip: 'AWS imports',
       title: 'Bring in your AWS Pricing Calculator work',
       text: "Import an estimate's CSV export or the EC2 and EBS bulk upload templates. Each imported card notes AWS's own figure, and services this calculator does not price keep AWS's figure.",
     },
     {
       img: 'share.webp', chip: 'Share link',
-      title: "Share a link that shows today's price",
-      text: "A share link opens a read-only page with the numbers as saved and a Today column priced with today's list. Excel and PDF exports come from the same report.",
+      title: "Share a link that checks today's prices",
+      text: "A share link opens a read-only page with the numbers as saved. It checks them against today's price list and, when prices changed, offers a new link with today's prices. The old link stays as it was.",
     },
     {
       img: 'advise.webp', chip: 'AI review (beta)',

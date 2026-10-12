@@ -91,10 +91,12 @@
     try { localStorage.setItem(PANEL_KEY, on ? 'open' : 'closed'); } catch { /* ignore */ }
   }
   // The review table carries its own totals per site, so the totals drawer stays shut there.
-  const showPanel = $derived(app.view !== 'advise' && (selectedExists || (panelOpen && app.view === 'canvas')));
+  /** The AI review panel on the right; while it is open the totals drawer steps aside. */
+  let chat = $state(false);
+  const showPanel = $derived(!chat && (selectedExists || (panelOpen && app.view === 'canvas')));
   let asideW = $state(0);
   $effect(() => {
-    view.reserve = showPanel ? asideW + 16 : 0;
+    view.reserve = chat ? 436 : showPanel ? asideW + 16 : 0;
   });
 
   function typing(e: KeyboardEvent): boolean {
@@ -149,18 +151,17 @@
       <div class="tabs" role="tablist" aria-label="View">
         <button role="tab" aria-selected={app.view === 'canvas'} class:on={app.view === 'canvas'} onclick={() => (app.view = 'canvas')}>Canvas</button>
         <button role="tab" aria-selected={app.view === 'review'} class:on={app.view === 'review'} onclick={() => (app.view = 'review')}>Review table</button>
-        <button role="tab" aria-selected={app.view === 'advise'} class:on={app.view === 'advise'} onclick={() => (app.view = 'advise')}>AI review <span class="beta">Beta</span></button>
+        <button class="ai" class:on={chat} aria-pressed={chat} onclick={() => (chat = !chat)} title="Ask an AI model about this tab">AI review <span class="beta">Beta</span></button>
         <span class="status small muted" aria-live="polite">{app.busy > 0 ? 'Pricing…' : ''}</span>
       </div>
       <Reminders />
       <div class="stage" class:review={app.view === 'review'}>
         {#if app.view === 'canvas'}
           <Canvas />
-        {:else if app.view === 'review'}
-          <Review />
         {:else}
-          <Advisor />
+          <Review />
         {/if}
+        <Advisor bind:open={chat} />
         {#if showPanel}
           <aside class:sel={selectedExists} bind:offsetWidth={asideW} transition:fly={{ x: 40, duration: 160 }}>
             {#if selectedExists}
@@ -170,7 +171,7 @@
               <Summary />
             {/if}
           </aside>
-        {:else if app.view === 'canvas'}
+        {:else if app.view === 'canvas' && !chat}
           <button class="peek" onclick={() => setPanel(true)} title="Show the estimate totals">Totals</button>
         {/if}
       </div>
@@ -240,6 +241,7 @@
   .tabs { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
   .tabs button { border-radius: 999px; }
   .tabs button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .tabs .ai { margin-left: 4px; }
   .status { margin-left: auto; }
   .error { margin: 12px 16px 0; padding: 10px 12px; border: 1px solid var(--danger); border-radius: 8px; color: var(--danger); }
   /* On a wide screen the page is exactly one window tall and the board takes what is left. */

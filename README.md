@@ -1,41 +1,37 @@
-# csps-calc
+# Cloud Service ProviderS Calculator (csps-calc)
 
-A cost calculator for AWS, Google Cloud, Oracle Cloud and Microsoft Azure on one page.
+A free cost calculator that prices one design on AWS, Google Cloud, Oracle Cloud and Microsoft Azure on the same board.
 
-- Lay sites out on a board, side by side or stacked: a data centre on AWS Jakarta and a recovery site on Azure Indonesia Central in one estimate. Pan and zoom like a diagram tool.
-- Copy a card, a region or a whole site at the same size or at any percentage, for example a recovery site at 50%.
-- Build the estimate like the architecture: a VPC holds a Kubernetes cluster, the cluster holds node groups, each node group holds its disks. Counts multiply down the tree, so 3 nodes with 2 disks each price 6 disks.
-- Drag a workload, or a whole VPC with everything inside, to another region or another cloud and see the new price. Items moved between clouds keep their size and get the nearest type, flagged for a check.
-- Compare on-demand, Savings Plans, Reserved Instances and committed use in one matrix next to the spec.
-- Attach add-ons to what they serve: a WAF with 3 rules on one load balancer and 1 rule on another, DDoS protection on a CDN, backups on a database.
-- Add each cloud's support plan to a site; the fee follows the provider's published rule.
-- Place cards freely inside a region, with guides, a minimap and arrow-key moves.
-- Share the estimate by link, or export it to Excel (full detail, a sheet per region) and PDF (one-page summary).
-- Each card shows whether the service runs in one zone or several, and the cloud's free tier for it.
-- A shared link also shows what the same design costs at today's prices.
-- Works with mouse, touch and pen.
-- Plain reminders catch common gaps: replication traffic between sites, VMs without disks, sites with no VPN or interconnect.
+**Open it:** <https://csps-calc.vercel.app>
 
-Live at <https://csps-calc.vercel.app>.
+## What it is for
 
-Prices are estimates in USD at public list price. Taxes are not included.
+Solution architects quote one design on several clouds. Each provider's own calculator has its own layout, so comparing them means four tabs and a spreadsheet. This calculator keeps the design in one place and prices it with each provider's public list prices, refreshed every day.
 
-## How prices get here
+## What it does
 
-A GitHub Action runs every day. It downloads the public price lists (AWS Price List API, Google Cloud Billing Catalog API, Oracle's price list, Azure Retail Prices API), keeps the rows the calculator uses, and deploys them with the site as gzipped JSON. The browser loads only the files for the regions on the canvas. Alibaba Cloud is not included: its terms forbid compiling its prices. Tencent Cloud and BytePlus are not included for the same reason.
+- Sites and region boxes sit on one board: a data centre on one cloud and a recovery site on another, with a running total per box and site.
+- Cards nest like the architecture: disks inside a VM, VMs inside a cluster, the cluster inside a VPC. Counts multiply through them.
+- A site moves to another cloud in one step. The calculator picks the nearest region and a matching size, and flags each card to check.
+- Each card compares on-demand with Savings Plans, Reserved Instances and committed-use discounts.
+- Cards, region boxes and sites copy as they are or scaled, for example a recovery site at 50%.
+- Imports from the AWS Pricing Calculator: an estimate's CSV export and the EC2 and EBS bulk upload templates. It can also fill AWS's EC2 template from an estimate.
+- A share link opens a read-only page with the saved numbers and today's price beside them. Excel and PDF exports come from the same figures.
+- An AI review (beta) answers questions about the estimate and points out risks and savings. It gives advice only and can make mistakes.
 
-| Folder | What it holds |
-|---|---|
-| `etl/` | Go price fetcher (`go run ./cmd/fetch`) |
-| `web/` | Svelte app: canvas, pricing logic per service (`src/lib/catalog`), tests |
-| `api/`, `apilib/` | Go functions on Vercel: share links (Supabase) and Excel/PDF export |
-| `supabase/` | Database migration for saved estimates |
+## What the numbers are
 
-## Run it locally
+- Estimates in USD at public list price, before tax. Negotiated discounts and credits are not in them.
+- Free-tier allowances are not taken off the totals. The info icon on a card shows the allowance.
+- If a cloud does not sell an option, the calculator says so instead of pricing something else.
+- Check prices with the provider before you buy, sign or quote.
 
-```bash
-cd etl && GCP_BILLING_API_KEY=... go run ./cmd/fetch -out ../web/public/prices -regions ap-southeast-3
-cd web && npm ci && npm run dev
-```
+Prices come from the AWS Price List API, the Google Cloud Billing Catalog API, Oracle's public price list and the Azure Retail Prices API. Alibaba Cloud, Tencent Cloud and BytePlus are not included: their terms forbid collecting their prices this way.
 
-`npm test` in `web/` prices real items against the fetched files and checks the dollar values.
+## More
+
+- What changed and when: [changelog](https://csps-calc.vercel.app/changelog)
+- [Privacy](https://csps-calc.vercel.app/privacy) · [Terms](https://csps-calc.vercel.app/terms) · [Trademarks and credits](https://csps-calc.vercel.app/legal)
+- Questions and bug reports: [GitHub Issues](https://github.com/Rayhanbintang/csps-calc-code/issues)
+
+Not affiliated with or endorsed by Amazon Web Services, Google Cloud, Oracle, Microsoft or Red Hat.

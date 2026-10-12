@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { loadEstimate } from '../lib/api';
+  import { loadEstimate, saveEstimate } from '../lib/api';
   import type { Saved } from '../lib/api';
   import { DISCLAIMER, dateOnly, money, qty, rate } from '../lib/report';
   import { saveDraft } from '../lib/store.svelte';
@@ -47,6 +47,25 @@
   }
 
   let open = $state<Record<string, boolean>>({});
+
+  /** A new link for the same estimate priced with today's list. This link stays as it is. */
+  let fresh = $state('');
+  let saving = $state(false);
+  let saveProblem = $state('');
+  async function saveToday() {
+    if (!saved || !today || saving) return;
+    saving = true;
+    saveProblem = '';
+    try {
+      const slug = await saveEstimate(saved.estimate, today);
+      fresh = `${location.origin}/e/${slug}`;
+      try { await navigator.clipboard.writeText(fresh); } catch { /* clipboard blocked; the link stays on screen */ }
+    } catch (e) {
+      saveProblem = e instanceof Error ? e.message : String(e);
+    } finally {
+      saving = false;
+    }
+  }
 </script>
 
 <div class="page">
@@ -68,12 +87,23 @@
         {#if changed}
           With today's prices ({dateOnly(today.pricesAsOf)}) this estimate costs <strong>{money(today.monthly)}</strong> a month,
           {delta(today.monthly, r.monthly)} against the saved {money(r.monthly)}. The "Today" column shows each change.
+          <div class="renew">
+            {#if fresh}
+              New link with today's prices, copied: <a href={fresh}>{fresh}</a>
+            {:else}
+              <button class="primary" onclick={saveToday} disabled={saving}>{saving ? 'Saving…' : "Save a new link with today's prices"}</button>
+              <span class="small muted">This link keeps the numbers as saved.</span>
+            {/if}
+            {#if saveProblem}<span class="err small">{saveProblem}</span>{/if}
+          </div>
         {:else}
           Today's prices ({dateOnly(today.pricesAsOf)}) give the same total: {money(today.monthly)} a month.
         {/if}
       </div>
     {:else if todayProblem}
       <p class="small muted">Today's prices did not load ({todayProblem}). The saved numbers below are complete.</p>
+    {:else}
+      <p class="today small muted" role="status">Checking today's prices against the saved ones…</p>
     {/if}
 
     <dl class="big">
@@ -152,6 +182,8 @@
   .disc { margin-top: 16px; color: var(--muted); }
   .today { margin: 8px 0 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font-size: 13.5px; }
   .today.changed { border-color: var(--warn-line); background: var(--warn-bg); }
+  .renew { margin-top: 8px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .renew a { color: var(--accent); word-break: break-all; }
   .up { color: var(--danger); font-weight: 600; }
   .down { color: var(--ok); font-weight: 600; }
 </style>

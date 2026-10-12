@@ -11,7 +11,8 @@ export const CHANGELOG: Release[] = [
     date: '2026-10-12',
     items: [
       'A landing page, plus privacy, terms, trademarks and this changelog. The calculator moved to /app; old share links still open.',
-      'AI review: a language model reads the tab and points out risks and savings. It never changes your cards.',
+      'AI review (beta): a chat panel on the right of the board. Start with "Review my design" or ask anything about the estimate. It never changes your cards.',
+      'A share link checks its saved numbers against today's prices and, when they changed, offers a new link with today's prices.',
       'Totals no longer subtract free tiers. The info icon on a card shows the allowance.',
       'If a cloud does not sell something, the option is greyed out with the reason instead of priced as something else: MariaDB off AWS, Arm on Cloud Run and Azure Functions, the Classic load balancer off AWS, and more.',
       'Red Hat OpenShift on the Kubernetes card: ROSA on AWS and ARO on Azure.',
